@@ -1,0 +1,8 @@
+ipython
+nbformat
+ipynbname
+openai
+traitlets
+pyyaml
+jinja2
+pydantic

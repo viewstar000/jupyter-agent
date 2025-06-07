@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jupyter-agent"
+version = "202506.01"
+description = "调用LLM实现Jupyter代码的自动生成、执行、调试等功能"
+authors = [
+    { name="viewstar000" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.9"
+urls = { "Homepage" = "https://github.com/viewstar000/jupyter-agent" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "ipython",
+    "nbformat",
+    "ipynbname",
+    "openai",
+    "traitlets",
+    "pyyaml",
+    "jinja2",
+    "pydantic"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["captcha_adversarial*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt"]
