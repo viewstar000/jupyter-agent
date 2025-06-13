@@ -141,10 +141,14 @@ class BaseTaskAgent(ChatMixin):
         }
         if self.OUTPUT_JSON_SCHEMA:
             json_schema = self.OUTPUT_JSON_SCHEMA.model_json_schema()
-            json_example = {
-                name: field.examples[0] if field.examples else field.default
-                for name, field in self.OUTPUT_JSON_SCHEMA.model_fields.items()
-            }
+            model_fields = getattr(self.OUTPUT_JSON_SCHEMA, "model_fields", None)
+            if model_fields and hasattr(model_fields, "items"):
+                json_example = {
+                    name: field.examples[0] if getattr(field, "examples", None) else getattr(field, "default", None)
+                    for name, field in model_fields.items()
+                }
+            else:
+                json_example = {}
             contexts["OUTPUT_JSON_SCHEMA"] = json.dumps(json_schema, indent=2, ensure_ascii=False)
             contexts["OUTPUT_JSON_EXAMPLE"] = json.dumps(json_example, indent=2, ensure_ascii=False)
         contexts.update(kwargs)

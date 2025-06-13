@@ -20,6 +20,7 @@ TASK_STAGE_COMPLETED = "completed"
 
 
 class TaskAction(str, Enum):
+    DEFAULT = "*"
     CONTINUE = "continue"
     RETRY = "retry"
     SKIP = "skip"
@@ -27,7 +28,7 @@ class TaskAction(str, Enum):
 
 
 class StageNext[ST](BaseModel):
-    action: TaskAction = None
+    action: Optional[TaskAction] = None
     stage: ST | str
     message: str = ""
 
@@ -36,7 +37,7 @@ class StageTransition[ST, AS](BaseModel):
     stage: ST | str
     agent: Type[BaseTaskAgent | DebugMixin] | str
     states: Dict[AS | str, StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = {}
-    next_stage: StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str = None
+    next_stage: Optional[StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = None
 
 
 class BaseTaskFlow(DebugMixin):
@@ -61,25 +62,27 @@ class BaseTaskFlow(DebugMixin):
             assert not (st.next_stage and st.states), "next_stage and states are mutually exclusive"
             self.stage_transitions[st.stage] = st
             if st.next_stage:
-                st.states["*"] = st.next_stage
+                st.states[TaskAction.DEFAULT] = st.next_stage
                 st.next_stage = None
             for state, ns in st.states.items():
                 st.states[state] = {}
                 if isinstance(ns, str):
-                    st.states[state]["*"] = StageNext(stage=ns)
+                    st.states[state] = {TaskAction.DEFAULT: StageNext(stage=ns)}
                 elif isinstance(ns, StageNext):
-                    action = ns.action or "*"
-                    st.states[state][action] = ns
+                    action = ns.action or TaskAction.DEFAULT
+                    st.states[state] = {action: ns}
                 elif isinstance(ns, list):
+                    state_dict = {}
                     for n in ns:
-                        action = n.action or "*"
-                        st.states[state][action] = n
+                        action = n.action or TaskAction.DEFAULT
+                        state_dict[action] = n
+                    st.states[state] = state_dict
                 elif isinstance(ns, dict):
                     st.states[state] = ns
                 else:
                     raise ValueError(f"Unknown next stage: {ns}")
-                state_ns = st.states[state]
-                state_ns[TaskAction.CONTINUE] = state_ns.get(TaskAction.CONTINUE) or state_ns.get("*")
+                state_ns: Dict = st.states[state]  # type: ignore
+                state_ns[TaskAction.CONTINUE] = state_ns.get(TaskAction.CONTINUE) or state_ns.get(TaskAction.DEFAULT)
                 state_ns[TaskAction.RETRY] = state_ns.get(TaskAction.RETRY) or StageNext(stage=st.stage)
                 state_ns[TaskAction.STOP] = state_ns.get(TaskAction.STOP) or StageNext(stage=st.stage)
                 state_ns[TaskAction.SKIP] = state_ns.get(TaskAction.SKIP) or state_ns.get(TaskAction.CONTINUE)

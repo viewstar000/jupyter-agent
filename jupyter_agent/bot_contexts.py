@@ -16,7 +16,7 @@ import traceback
 import nbformat
 import ipynbname
 
-from IPython import get_ipython
+from IPython.core.getipython import get_ipython
 from .utils import DebugMixin
 from .utils import REPLY_TASK_RESULT, REPLY_CELL_ERROR
 
@@ -125,6 +125,9 @@ class TaskCellContext(DebugMixin):
             if line.strip() == "## Task Options:":
                 is_option = True
                 continue
+            if line.strip() == "## ---":
+                is_option = False
+                continue
             if is_option:
                 if line.startswith("# "):
                     cell_options += line[2:] + "\n"
@@ -164,14 +167,27 @@ class TaskCellContext(DebugMixin):
             cell_options["issues"] = self.task_issue
         if cell_options:
             cell_options["update_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            cell_options = yaml.safe_dump(cell_options, allow_unicode=True, sort_keys=False, indent=4)
-            cell_source += "## Task Options:\n"
-            for line in cell_options.split("\n"):
-                cell_source += "# " + line + "\n"
+            cell_source += self.format_options(cell_options)
         cell_source += "\n" + self.cell_code
         cell_source = "\n".join([magic_line, cell_source])
         ipython = get_ipython()
-        ipython.set_next_input(cell_source, replace=True)
+        if ipython is not None:
+            ipython.set_next_input(cell_source, replace=True)
+
+    def format_options(self, cell_options):
+        """格式化任务选项"""
+        result = "\n## Task Options:\n"
+        for key, value in cell_options.items():
+            if isinstance(value, str) and "\n" in value:
+                result += f"# {key}: |\n"
+                for line in value.split("\n"):
+                    result += "#     " + line + "\n"
+            elif isinstance(value, str) and (":" in value or '"' in value):
+                result += f"# {key}: {repr(value)}\n"
+            else:
+                result += f"# {key}: {value}\n"
+        result += "## ---\n"
+        return result
 
     def load_cell_context(self):
         """加载当前任务单元格的上下文"""
