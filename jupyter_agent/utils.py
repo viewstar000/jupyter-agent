@@ -48,11 +48,13 @@ class TeeCapturingDisplayPublisher(CapturingDisplayPublisher):
 
     def __init__(self, *args, original_display_pub=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.original_display_pub = original_display_pub or get_ipython().display_pub
+        ipy = get_ipython()
+        self.original_display_pub = original_display_pub or (ipy.display_pub if ipy is not None else None)
 
     def publish(self, *args, **kwargs):
         super().publish(*args, **kwargs)
-        self.original_display_pub.publish(*args, **kwargs)
+        if self.original_display_pub is not None:
+            self.original_display_pub.publish(*args, **kwargs)
 
 
 class TeeCapturingDisplayHook(CapturingDisplayHook):
@@ -87,11 +89,15 @@ class TeeOutputCapture(capture_output):
             stderr = CloselessStringIO()
             sys.stderr = Tee(stderr, channel="stderr")
         if self.display:
-            self.save_display_pub = self.shell.display_pub
-            self.shell.display_pub = TeeCapturingDisplayPublisher()
-            outputs = self.shell.display_pub.outputs
-            self.save_display_hook = sys.displayhook
-            sys.displayhook = TeeCapturingDisplayHook(shell=self.shell, outputs=outputs)
+            if self.shell is not None:
+                self.save_display_pub = self.shell.display_pub
+                self.shell.display_pub = TeeCapturingDisplayPublisher()
+                outputs = self.shell.display_pub.outputs
+                self.save_display_hook = sys.displayhook
+                sys.displayhook = TeeCapturingDisplayHook(shell=self.shell, outputs=outputs)
+            else:
+                self.save_display_pub = None
+                outputs = None
 
         return CapturedIO(stdout, stderr, outputs)
 

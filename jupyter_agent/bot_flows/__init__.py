@@ -7,6 +7,8 @@ https://opensource.org/licenses/MIT
 
 from .base import BaseTaskFlow
 from .master_planner import MasterPlannerFlow
-from .task_executor import TaskExecutorFlow
+from .task_executor_v1 import TaskExecutorFlowV1
 
-__all__ = ["BaseTaskFlow", "MasterPlannerFlow", "TaskExecutorFlow"]
+from .task_executor_v2 import TaskExecutorFlowV2
+
+__all__ = ["BaseTaskFlow", "MasterPlannerFlow", "TaskExecutorFlowV1"]

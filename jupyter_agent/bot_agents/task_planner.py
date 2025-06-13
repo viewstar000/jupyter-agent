@@ -95,27 +95,27 @@ class TaskPlannerOutput(BaseModel):
         examples=[TaskPlannerState.PLANNED.value],
     )
     subtask_subject: str = Field(
-        None,
+        "",
         description='子任务简要描述, 在 state="planned" 时必填',
         examples=["对...进行...处理，输出..."],
     )
     subtask_coding_prompt: str = Field(
-        None,
+        "",
         description='子任务代码生成Prompt, 在 state="planned" 时必填',
         examples=["请基于...，计算...，并保存结果为..."],
     )
     subtask_verify_prompt: str = Field(
-        None,
+        "",
         description='子任务结果验证Prompt, 在 state="planned" 时必填',
         examples=["请验证当前任务结果是否符合以下条件：..."],
     )
     subtask_summary_prompt: str = Field(
-        None,
+        "",
         description='子任务结果总结Prompt, 在 state="planned" 时必填',
         examples=["请对当前任务的结果进行总结，输出以下要素：..."],
     )
     request_info_prompt: str = Field(
-        None,
+        "",
         description='需要用户补充更详细的信息的 Prompt, 在 state="request_info" 时必填',
         examples=["请补充与...相关的详细的信息"],
     )

@@ -13,6 +13,9 @@ from .task_coder import TaskCodingAgent
 from .task_debuger import CodeDebugerAgent
 from .task_verifier import TaskVerifyAgent, TaskVerifyState
 from .task_summarier import TaskSummaryAgent
+from .task_planner_v2 import TaskPlannerAgentHuge
+from .task_verify_summarier import TaskVerifySummaryAgent
+from .task_reasoner import TaskReasoningAgent
 
 __all__ = [
     "BaseTaskAgent",
@@ -26,4 +29,7 @@ __all__ = [
     "TaskSummaryAgent",
     "TaskVerifyState",
     "AgentFactory",
+    "TaskPlannerAgentHuge",
+    "TaskVerifySummaryAgent",
+    "TaskReasoningAgent",
 ]

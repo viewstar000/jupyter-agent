@@ -30,7 +30,7 @@ class TaskStage(str, Enum):
     COMPLETED = "completed"
 
 
-class TaskExecutorFlow(BaseTaskFlow):
+class TaskExecutorFlowV1(BaseTaskFlow):
 
     START_STAGE = TaskStage.PLANNING
     STOP_STAGES = [TaskStage.COMPLETED, TaskStage.PLANNING_PAUSED]

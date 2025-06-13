@@ -16,7 +16,7 @@ from traitlets import Unicode, Int
 from traitlets.config.configurable import Configurable
 from .bot_contexts import NotebookContext, TaskCellContext
 from .bot_agents import AgentFactory
-from .bot_flows import MasterPlannerFlow, TaskExecutorFlow
+from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV1, TaskExecutorFlowV2
 from .utils import DebugMixin
 
 
@@ -35,6 +35,7 @@ class BotMagics(Magics, Configurable, DebugMixin):
     reasoning_api_key = Unicode("API_KEY", help="Reasoning API Key").tag(config=True)
     reasoning_model = Unicode("", help="Reasoning Model Name").tag(config=True)
     notebook_path = Unicode(None, allow_none=True, help="Path to Notebook file").tag(config=True)
+    default_task_flow = Unicode("v2", allow_none=True, help="Default task flow").tag(config=True)
     debug_level = Int(0, help="Debug level for logging").tag(config=True)
 
     def parse_args(self, line):
@@ -43,6 +44,7 @@ class BotMagics(Magics, Configurable, DebugMixin):
         parser.add_argument("--debug-level", type=int, default=int(self.debug_level), help="Debug level for logging")
         parser.add_argument("-P", "--planning", action="store_true", default=False, help="Run in planning mode")
         parser.add_argument("-s", "--stage", type=str, default=None, help="Task stage")
+        parser.add_argument("-f", "--flow", type=str, default=self.default_task_flow, help="Flow name")
         parser.add_argument("-m", "--max-tries", type=int, default=3, help="Max tries")
         parser.add_argument("-S", "--step-mode", action="store_true", default=False, help="Run in single step mode")
         parser.add_argument("-Y", "--auto-confirm", action="store_true", default=False, help="Run without confirm")
@@ -62,9 +64,10 @@ class BotMagics(Magics, Configurable, DebugMixin):
                     "We will fill it with some random characters, please **RERUN** the cell again."
                 )
             )
-            self.shell.set_next_input(
-                "%%bot {}\n\n# {}".format(line.strip(), time.strftime("%Y-%m-%d %H:%M:%S")), replace=True
-            )
+            if self.shell is not None:
+                self.shell.set_next_input(
+                    "%%bot {}\n\n# {}".format(line.strip(), time.strftime("%Y-%m-%d %H:%M:%S")), replace=True
+                )
             return
         options = self.parse_args(line)
         self.debug("Cell magic called with options:", options)
@@ -89,7 +92,12 @@ class BotMagics(Magics, Configurable, DebugMixin):
         if options.planning:
             flow = MasterPlannerFlow(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
         else:
-            flow = TaskExecutorFlow(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
+            if options.flow == "v1":
+                flow = TaskExecutorFlowV1(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
+            elif options.flow == "v2":
+                flow = TaskExecutorFlowV2(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
+            else:
+                raise ValueError(f"Unknown flow: {options.flow}")
         flow(options.stage, options.max_tries, not options.step_mode, not options.auto_confirm)
 
 
