@@ -16,7 +16,7 @@ from traitlets import Unicode, Int
 from traitlets.config.configurable import Configurable
 from .bot_contexts import NotebookContext, TaskCellContext
 from .bot_agents import AgentFactory
-from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV1, TaskExecutorFlowV2
+from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV1, TaskExecutorFlowV2, TaskExecutorFlowV3
 from .utils import DebugMixin
 
 
@@ -96,6 +96,8 @@ class BotMagics(Magics, Configurable, DebugMixin):
                 flow = TaskExecutorFlowV1(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
             elif options.flow == "v2":
                 flow = TaskExecutorFlowV2(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
+            elif options.flow == "v3":
+                flow = TaskExecutorFlowV3(nb_context, cell_context, agent_factory, debug_level=self.debug_level)
             else:
                 raise ValueError(f"Unknown flow: {options.flow}")
         flow(options.stage, options.max_tries, not options.step_mode, not options.auto_confirm)

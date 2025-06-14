@@ -15,9 +15,12 @@ import argparse
 import traceback
 import nbformat
 import ipynbname
+import random
 
+from pydantic import BaseModel
+from IPython.display import Markdown
 from IPython.core.getipython import get_ipython
-from .utils import DebugMixin
+from .utils import DebugMixin, RequestUserPrompt, UserPromptResponse
 from .utils import REPLY_TASK_RESULT, REPLY_CELL_ERROR
 
 
@@ -37,22 +40,26 @@ class TaskCellContext(DebugMixin):
         """初始化任务单元格上下文"""
         DebugMixin.__init__(self, debug_level)
         self.cur_line = cur_line and cur_line.strip()
-        self.cur_content = cur_line and cur_content.strip()
+        self.cur_content = cur_content and cur_content.strip()
         self.notebook_path = notebook_path
         self.max_output_size = max_output_size
         self.max_result_size = max_result_size
         self.max_error_size = max_error_size
         self.task_stage = None
+        self.task_supply_infos: list[UserPromptResponse] = []
+        self.task_id = random.randbytes(4).hex().upper()
         self.task_subject = ""
         self.task_coding_prompt = ""
         self.task_verify_prompt = ""
         self.task_summary_prompt = ""
+        self.task_issue = ""
+        self.task_result = ""
+        self.task_important_infos = {}
+        self.task_confirm_infos: list[UserPromptResponse] = []
         self.cell_code = self.cur_content
         self._cell_output = ""
         self._cell_result = ""
         self._cell_error = ""
-        self.task_issue = ""
-        self.task_result = ""
         self.remain_args = []
         if self.cur_line is False and self.cur_content.startswith("%%bot"):
             self.cur_line, self.cur_content = self.cur_content.split("\n", 1)
@@ -138,14 +145,23 @@ class TaskCellContext(DebugMixin):
                 cell_code += line + "\n"
         self.cell_code = cell_code.strip()
         if cell_options:
-            cell_options = yaml.safe_load(cell_options)
-            self.task_stage = self.task_stage or cell_options.get("stage", self.task_stage)
-            self.task_subject = cell_options.get("subject", "")
-            self.task_coding_prompt = cell_options.get("coding_prompt", "")
-            self.task_verify_prompt = cell_options.get("verify_prompt", "")
-            self.task_summary_prompt = cell_options.get("summary_prompt", "")
-            self.task_result = cell_options.get("result", "")
-            self.task_issue = cell_options.get("issues", "")
+            try:
+                cell_options = yaml.safe_load(cell_options)
+                self.task_stage = self.task_stage or cell_options.get("stage", self.task_stage)
+                self.task_id = cell_options.get("id", self.task_id)
+                self.task_subject = cell_options.get("subject", "")
+                self.task_coding_prompt = cell_options.get("coding_prompt", "")
+                self.task_verify_prompt = cell_options.get("verify_prompt", "")
+                self.task_summary_prompt = cell_options.get("summary_prompt", "")
+                self.task_result = cell_options.get("result", "")
+                self.task_issue = cell_options.get("issues", "")
+                self.task_important_infos = json.loads(cell_options.get("important_infos", "{}"))
+                self.task_supply_infos = [UserPromptResponse(**info) for info in cell_options.get("supply_infos", [])]
+                self.task_confirm_infos = [
+                    UserPromptResponse(**info) for info in cell_options.get("confirm_infos", [])
+                ]
+            except Exception as e:
+                print(f"Error parsing bot cell options: {type(e).__name__}: {e}")
 
     def update_bot_cell(self):
         """生成Cell内容"""
@@ -165,7 +181,14 @@ class TaskCellContext(DebugMixin):
             cell_options["result"] = self.task_result
         if self.task_issue:
             cell_options["issues"] = self.task_issue
+        if self.task_important_infos:
+            cell_options["important_infos"] = json.dumps(self.task_important_infos, ensure_ascii=False, indent=4)
+        if self.task_supply_infos:
+            cell_options["supply_infos"] = self.task_supply_infos
+        if self.task_confirm_infos:
+            cell_options["confirm_infos"] = self.task_confirm_infos
         if cell_options:
+            cell_options["id"] = self.task_id
             cell_options["update_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
             cell_source += self.format_options(cell_options)
         cell_source += "\n" + self.cell_code
@@ -174,18 +197,47 @@ class TaskCellContext(DebugMixin):
         if ipython is not None:
             ipython.set_next_input(cell_source, replace=True)
 
+    def _format_yaml_element(self, e, level=0, indent=4):
+
+        space = " " * indent * level
+        result = ""
+        if isinstance(e, dict):
+            result += "\n"
+            for k, v in e.items():
+                if not v:
+                    continue
+                result += f"{space}{k}: "
+                result += self._format_yaml_element(v, level + 1, indent)
+        elif isinstance(e, list):
+            result += "\n"
+            for v in e:
+                result += f"{space}- "
+                result += self._format_yaml_element(v, level + 1, indent)
+        elif isinstance(e, BaseModel):
+            result += self._format_yaml_element(e.model_dump(), level, indent)
+        elif isinstance(e, str):
+            if "\n" in e:
+                if e.endswith("\n"):
+                    result += f"|\n"
+                else:
+                    result += f"|-\n"
+                for line in e.split("\n"):
+                    result += f"{space}{line}\n"
+            elif ":" in e or '"' in e or "'" in e:
+                result += f"'{e.replace("'", "''")}'\n"
+            else:
+                result += f"{e}\n"
+        elif e is None:
+            result += "null\n"
+        else:
+            result += f"{e}\n"
+        return result
+
     def format_options(self, cell_options):
         """格式化任务选项"""
         result = "\n## Task Options:\n"
-        for key, value in cell_options.items():
-            if isinstance(value, str) and "\n" in value:
-                result += f"# {key}: |\n"
-                for line in value.split("\n"):
-                    result += "#     " + line + "\n"
-            elif isinstance(value, str) and (":" in value or '"' in value):
-                result += f"# {key}: {repr(value)}\n"
-            else:
-                result += f"# {key}: {value}\n"
+        for line in self._format_yaml_element(cell_options).split("\n"):
+            result += f"# {line}\n"
         result += "## ---\n"
         return result
 
@@ -304,7 +356,6 @@ class NotebookContext(DebugMixin):
                                 self.debug(f"CELL[{idx}] is task cell")
                                 cell_context = TaskCellContext(line, source, notebook_path=False)
                                 cell_type = "task"
-                                cell_subject = cell_context.task_subject
                                 cell_source = cell_context.cell_code
                                 if cell_context.task_result:
                                     cell_outputs = [cell_context.task_result]
@@ -312,9 +363,13 @@ class NotebookContext(DebugMixin):
                                     {
                                         "type": cell_type,
                                         "context": ["TASK"],
-                                        "subject": cell_subject,
                                         "source": cell_source,
                                         "outputs": cell_outputs,
+                                        "task_id": cell_context.task_id,
+                                        "subject": cell_context.task_subject,
+                                        "supply_infos": cell_context.task_supply_infos,
+                                        "confirm_infos": cell_context.task_confirm_infos,
+                                        "important_infos": cell_context.task_important_infos,
                                     }
                                 )
                         else:

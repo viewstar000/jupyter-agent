@@ -13,6 +13,8 @@ import json
 import jinja2
 import openai
 
+from typing import Optional
+from pydantic import BaseModel, Field
 from IPython.display import display as ipython_display, Markdown
 from IPython.core.getipython import get_ipython
 from IPython.core.displaypub import CapturingDisplayPublisher
@@ -172,6 +174,7 @@ _block_style = """
 }
 
 .block-content {
+    width: unset;
     padding: 0.5rem;
 }
 
@@ -182,12 +185,14 @@ _block_style = """
 """
 
 
-def markdown_block(block, title="Block"):
+def markdown_block(block, title="Block", collapsed=True):
+
+    default_state = "collapsed" if collapsed else ""
 
     return Markdown(
         _block_style
         + '<div class="block-panel" >'
-        + '<div class="block-title collapsed" onclick="this.classList.toggle(\'collapsed\')">'
+        + f'<div class="block-title {default_state}" onclick="this.classList.toggle(\'collapsed\')">'
         + f"{title} (click to expand)"
         + "</div>"
         + '<div class="block-content" >\n\n'
@@ -205,10 +210,12 @@ class ChatMessages(DebugMixin):
         self.templates = templates
         self.display_message = display_message
         if self.templates is not None:
-            self.jinja_env = jinja2.Environment(loader=jinja2.DictLoader(self.templates))
+            self.jinja_env = jinja2.Environment(
+                loader=jinja2.DictLoader(self.templates), trim_blocks=True, lstrip_blocks=True
+            )
         else:
             self.jinja_env = jinja2.Environment()
-        self.jinja_env.filters["json"] = json.dumps
+        self.jinja_env.filters["json"] = lambda x: json.dumps(x, indent=2, ensure_ascii=False)
 
     def add(self, content, role="user", content_type="text", tpl_context=None):
         tpl_context = tpl_context or self.contexts
@@ -399,3 +406,24 @@ class ChatMixin(DebugMixin):
                     display_reply=display_reply,
                 )
             )
+
+
+class RequestUserPrompt(BaseModel):
+    prompt: str = Field(
+        description="需要用户补充详细信息的Prompt",
+        examples=["请补充与...相关的详细的信息", "请确认...是否...", "请提供..."],
+    )
+    example: Optional[str] = Field(None, description="示例", examples=["..."])
+
+
+class UserPromptResponse(BaseModel):
+    prompt: str = Field(description="需要用户补充详细信息的Prompt", examples=["..."])
+    response: str = Field(description="用户补充的详细信息", examples=["..."])
+
+
+def request_user_response(prompts: list[RequestUserPrompt]) -> list[UserPromptResponse]:
+    responses = []
+    for prompt in prompts:
+        response = input(f"{prompt.prompt} (例如: {prompt.example})")
+        responses.append(UserPromptResponse(prompt=prompt.prompt, response=response))
+    return responses

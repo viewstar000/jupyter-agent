@@ -13,47 +13,77 @@ from ..utils import ChatMixin
 _TASK_CONTEXTS = """
 **全局任务规划及子任务完成情况**：
 
-{% set ns = namespace(tid=0) %}
 {% for cell in cells %}
-{% if cell.type == "global_plan" and cell.source.strip() %}
-{{ cell.source }}
-{% for plan in cell.outputs %}
-{{ plan }}
-{% endfor %}
-{% elif cell.type == "task" and cell.source.strip() %}
-{% set ns.tid = ns.tid + 1 %}
-## 子任务 {{ ns.tid }} ({{ '已完成' if cell.outputs else '未完成' }})
+    {% if cell.type == "global_plan" and cell.source.strip() -%}
+        {{ cell.source }}
+        {% for plan in cell.outputs -%}
+            {{ plan }}
+        {% endfor %}
+    {% elif cell.type == "task" and cell.subject.strip() -%}
+## 子任务[{{ cell.task_id }}] - {{ '已完成' if cell.outputs else '未完成' }}
 
+        {% if cell.supply_infos -%}
+### 用户补充信息
+
+            {% for info in cell.supply_infos %}
+Q: {{ info.prompt }}
+
+A: {{ info.response }}
+
+            {% endfor %}
+        {% endif %}
 ### 任务目标
+
 {{ cell.subject }}
 
 ### 任务结果
-{% for output in cell.outputs %}
-{{ output }}
-{% endfor %}
-{% elif "TASK" in cell.context and cell.source.strip() %}
-{{ cell.source }}
-{% endif %}
+
+        {% for output in cell.outputs -%}
+            {{ output }}
+        {% endfor %}
+
+        {% if cell.important_infos %}
+### 任务结论中的重要信息(Important Infos)
+
+```json
+{{ cell.important_infos | json }}
+```
+        {% endif %}
+        {% if cell.confirm_infos %}
+### 用户确认信息
+
+            {% for info in cell.confirm_infos %}
+Q: {{ info.prompt }}
+
+A: {{ info.response }}
+
+            {% endfor %}
+        {% endif %}
+    {% elif "TASK" in cell.context and cell.source.strip() -%}
+        {{ cell.source }}
+    {% endif %}
 {% endfor %}
 """
+
 
 _CODE_CONTEXTS = """
 **已执行的代码**：
 
 ```python
-{% set ns = namespace(tid=0, cid=0) %}
+{% set ns = namespace(cid=0) %}
 {% for cell in cells %}
 {% if cell.type == "task" and cell.source.strip() %}
 {% set ns.cid = ns.cid + 1 %}
-{% set ns.tid = ns.tid + 1 %}
-## Cell[{{ ns.cid }}] for Task[{{ ns.tid }}]:
+######## Cell[{{ ns.cid }}] for Task[{{ cell.task_id }}] ########
 
 {{ cell.source }}
+
 {% elif "CODE" in cell.context and cell.source.strip() %}
 {% set ns.cid = ns.cid + 1 %}
-## Cell[{{ ns.cid }}]:
+######## Cell[{{ ns.cid }}] ########
 
 {{ cell.source }}
+
 {% endif %}
 {% endfor %}
 ```

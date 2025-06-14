@@ -22,8 +22,6 @@ class CodeExecutor(DebugMixin):
 
     def __call__(self):
         """执行代码逻辑"""
-        if self.debug_level <= 0:
-            clear_output(wait=True)
         self.debug("执行代码", self.task_context.cell_code[:50])
         ipython = get_ipython()
         exec_failed = False

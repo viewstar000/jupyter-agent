@@ -8,15 +8,15 @@ https://opensource.org/licenses/MIT
 from enum import Enum
 from .base import BaseTaskFlow, StageTransition, StageNext, TaskAction
 from ..bot_agents import (
-    TaskPlannerAgent,
+    TaskPlannerAgentV1,
     TaskCodingAgent,
     CodeDebugerAgent,
     CodeExecutor,
     TaskVerifyAgent,
     TaskSummaryAgent,
-    TaskPlannerState,
     TaskVerifyState,
 )
+from ..bot_agents.task_planner_v1 import TaskPlannerState
 
 
 class TaskStage(str, Enum):
@@ -37,7 +37,7 @@ class TaskExecutorFlowV1(BaseTaskFlow):
     STAGE_TRANSITIONS = [
         StageTransition[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING,
-            agent=TaskPlannerAgent,
+            agent=TaskPlannerAgentV1,
             states={
                 TaskPlannerState.PLANNED: TaskStage.CODING,
                 TaskPlannerState.REQUEST_INFO: TaskStage.PLANNING_PAUSED,
@@ -46,7 +46,7 @@ class TaskExecutorFlowV1(BaseTaskFlow):
         ),
         StageTransition[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING_PAUSED,
-            agent=TaskPlannerAgent,
+            agent=TaskPlannerAgentV1,
             states={
                 TaskPlannerState.PLANNED: TaskStage.CODING,
                 TaskPlannerState.REQUEST_INFO: TaskStage.PLANNING_PAUSED,

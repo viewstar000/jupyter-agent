@@ -121,7 +121,7 @@ class TaskPlannerOutput(BaseModel):
     )
 
 
-class TaskPlannerAgent(BaseTaskAgent):
+class TaskPlannerAgentV1(BaseTaskAgent):
     """任务规划器代理类"""
 
     PROMPT = TASK_PLANNER_PROMPT

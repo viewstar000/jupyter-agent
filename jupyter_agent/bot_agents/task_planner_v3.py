@@ -6,9 +6,10 @@ https://opensource.org/licenses/MIT
 """
 
 from enum import Enum
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_RESULT, REPLY_TASK_ISSUE
+from ..utils import REPLY_TASK_RESULT, RequestUserPrompt, UserPromptResponse, request_user_response
 from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_JSON, AGENT_MODEL_TYPE_PLANNER
 
 
@@ -41,6 +42,7 @@ TASK_PLANNER_PROMPT = """\
           - 验证总结的结果会记录在全局上下文中
     - 若需要用户提供更多的信息才能完成子任务，给出详细的提示信息
   - 子任务的划分应严格遵守全局目标规划说明的要求
+  - 在引用已完成的子任务的结果时，特别是important_infos中的信息，要保证准确、清晰、完整，不要出现任何误导信息
   - 子任务代码执行的结果不会记录在全局上下文中，只有LLM直接推理或LLM分析总结的结果会记录在全局上下文中以支持后续子任务的执行
 
 
@@ -55,6 +57,18 @@ TASK_PLANNER_PROMPT = """\
 {% include "CODE_CONTEXTS" %}
 
 ---
+
+{% if task.task_supply_infos %}
+**用户补充的信息**:
+
+    {% for info in task.task_supply_infos %}
+Q: {{ info.prompt }}
+
+A: {{ info.response }}
+
+    {% endfor %}
+---
+{% endif %}
 
 {% if task.task_subject and task.task_issue %}
 **当前子任务信息**:
@@ -102,6 +116,12 @@ class TaskPlannerOutput(BaseModel):
         ),
         examples=[TaskPlannerState.CODING_PLANNED.value],
     )
+    subtask_id: str = Field(
+        "",
+        description=f'子任务全局唯一ID，在 state="{TaskPlannerState.CODING_PLANNED}" '
+        f'或state="{TaskPlannerState.REASONING_PLANNED}" 时必填',
+        examples=["task-xxx"],
+    )
     subtask_subject: str = Field(
         "",
         description=(
@@ -123,14 +143,12 @@ class TaskPlannerOutput(BaseModel):
         ),
         examples=["请对当前任务的结果进行总结，输出以下要素：..."],
     )
-    request_info_prompt: str = Field(
-        "",
-        description=f'需要用户补充更详细的信息的 Prompt, 在 state="{TaskPlannerState.REQUEST_INFO}" 时必填',
-        examples=["请补充与...相关的详细的信息"],
+    request_supply_infos: Optional[List[RequestUserPrompt]] = Field(
+        None, description=f'需要用户补充更详细的信息的 Prompt, 在 state="{TaskPlannerState.REQUEST_INFO}" 时必填'
     )
 
 
-class TaskPlannerAgentV2(BaseTaskAgent):
+class TaskPlannerAgentV3(BaseTaskAgent):
     """任务规划器代理类"""
 
     PROMPT = TASK_PLANNER_PROMPT
@@ -144,28 +162,41 @@ class TaskPlannerAgentV2(BaseTaskAgent):
             self._C(Markdown("全局目标已达成，任务完成！"), reply_type=REPLY_TASK_RESULT)
             return False, reply.state
         elif reply.state == TaskPlannerState.REQUEST_INFO:
-            assert reply.request_info_prompt, "Request info prompt is empty"
-            self._D(Markdown(f"### 需要补充更详细的信息\n\n{reply.request_info_prompt}"), reply_type=REPLY_TASK_ISSUE)
+            assert reply.request_supply_infos, "Request info prompt is empty"
+            self._D(Markdown(f"### 需要补充更详细的信息\n"))
+            for info in reply.request_supply_infos:
+                self._D(Markdown(f"- {info.prompt} (例如: {info.example})\n"))
             return True, reply.state
         elif reply.state == TaskPlannerState.CODING_PLANNED:
+            assert reply.subtask_id, "Subtask id is empty"
             assert reply.subtask_subject, "Subtask subject is empty"
             assert reply.subtask_coding_prompt, "Subtask coding prompt is empty"
             assert reply.subtask_summary_prompt, "Subtask summary prompt is empty"
             self._D(
                 Markdown(
                     f"### 子任务: {reply.subtask_subject}\n"
+                    f"- ID: {reply.subtask_id}\n"
                     f"- Coding: {reply.subtask_coding_prompt}\n"
                     f"- Summary: {reply.subtask_summary_prompt}\n"
                 )
             )
+            self.task_context.task_id = reply.subtask_id
             self.task_context.task_subject = reply.subtask_subject
             self.task_context.task_coding_prompt = reply.subtask_coding_prompt
             self.task_context.task_summary_prompt = reply.subtask_summary_prompt
             return False, reply.state
         elif reply.state == TaskPlannerState.REASONING_PLANNED:
+            assert reply.subtask_id, "Subtask id is empty"
             assert reply.subtask_subject, "Subtask subject is empty"
             assert reply.subtask_summary_prompt, "Subtask summary prompt is empty"
-            self._D(Markdown(f"### 子任务: {reply.subtask_subject}\n" f"- Summary: {reply.subtask_summary_prompt}\n"))
+            self._D(
+                Markdown(
+                    f"### 子任务: {reply.subtask_subject}\n"
+                    f"- ID: {reply.subtask_id}\n"
+                    f"- Reasoning: {reply.subtask_summary_prompt}\n"
+                )
+            )
+            self.task_context.task_id = reply.subtask_id
             self.task_context.task_subject = reply.subtask_subject
             self.task_context.task_summary_prompt = reply.subtask_summary_prompt
             return False, reply.state
