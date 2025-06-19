@@ -11,8 +11,9 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_RESULT, RequestUserPrompt, UserPromptResponse, request_user_response
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_JSON
+from .base import BaseChatAgent, AgentOutputFormat
+from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _M, _B, _C, _O, markdown_block
+from ..utils import RequestUserPrompt, format_user_prompts
 
 TASK_SUMMARY_PROMPT = """\
 **角色定义**：
@@ -47,22 +48,21 @@ TASK_SUMMARY_PROMPT = """\
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前子任务代码需求：
-{{ task.task_coding_prompt }}
+{{ task.coding_prompt }}
 
 ### 当前代码：
 ```python
-{{ task.cell_code }}
+{{ task.source }}
 ```
 
 ### 当前代码执行的输出与结果：
-{{ task.cell_output }}
-{{ task.cell_result }}
+{{ task.output }}
 
 ### 当前任务总结要求：
-{{ task.task_summary_prompt }}
+{{ task.summary_prompt }}
 
 ---
 
@@ -99,18 +99,25 @@ class TaskStructureSumaryOutput(BaseModel):
     )
 
 
-class TaskStructureSummaryAgent(BaseTaskAgent):
+class TaskStructureSummaryAgent(BaseChatAgent):
 
     PROMPT = TASK_SUMMARY_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_JSON
+    OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskStructureSumaryOutput
     DISPLAY_REPLY = True
 
     def on_reply(self, reply: TaskStructureSumaryOutput):
         assert reply.summary, "Reply is empty"
-        self._C(Markdown("### 任务总结\n\n" + reply.summary), reply_type=REPLY_TASK_RESULT)
-        self.task_context.task_result = reply.summary
+        _C(Markdown("### 任务总结\n\n" + reply.summary), reply_type=ReplyType.TASK_RESULT)
+        self.task.set_data("result", reply.summary)
         if reply.important_infos:
-            self.task_context.task_important_infos = reply.important_infos
+            self.task.set_data("important_infos", reply.important_infos)
+            _O(
+                markdown_block(
+                    f"```json\n{json.dumps(reply.important_infos, indent=4, ensure_ascii=False)}\n```",
+                    title="重要信息",
+                )
+            )
         if reply.request_confirm_infos:
-            self.task_context.task_confirm_infos = request_user_response(reply.request_confirm_infos)
+            _O(Markdown(f"### 需要补充确认的信息\n"))
+            _O(Markdown(format_user_prompts(reply.request_confirm_infos, title="用户补充确认信息")))

@@ -1,202 +1,196 @@
 import pytest
-from jupyter_agent.bot_contexts import TaskCellContext
-from jupyter_agent.bot_contexts import TaskCellContext, UserPromptResponse
-import yaml
+import types
+import tempfile
+import os
+import nbformat
+from jupyter_agent import bot_contexts as bc
 
 
-class DummyDebugMixin:
-    def __init__(self, debug_level=0):
+class DummyLogger:
+    def __call__(self, *args, **kwargs):
         pass
 
 
-def test_format_options_basic():
-    ctx = TaskCellContext(cur_line="", cur_content="", notebook_path=None)
-    cell_options = {
-        "id": "ABC123",
-        "subject": "Test Subject",
-        "coding_prompt": "Write code",
-        "verify_prompt": "Verify code",
-        "summary_prompt": "Summarize",
-        "result": "Success",
-        "issues": "None",
-        "important_infos": {"info": "value"},
-        "supply_infos": [UserPromptResponse(prompt="foo", response="bar")],
-        "confirm_infos": [],
+# Patch logging functions to avoid side effects during tests
+bc._D = DummyLogger()
+bc._I = DummyLogger()
+bc._W = DummyLogger()
+bc._E = DummyLogger()
+bc._F = DummyLogger()
+bc._A = DummyLogger()
+
+
+def make_code_cell(source, outputs=None, metadata=None):
+    return {
+        "cell_type": "code",
+        "source": source,
+        "outputs": outputs or [],
+        "metadata": metadata or {},
+        "id": "testid",
     }
-    formatted = ctx.format_options(cell_options)
-    assert "## Task Options:" in formatted
-    assert "# id: ABC123" in formatted
-    assert "# subject: Test Subject" in formatted
-    assert "# coding_prompt: Write code" in formatted
-    assert "# verify_prompt: Verify code" in formatted
-    assert "# summary_prompt: Summarize" in formatted
-    assert "# result: Success" in formatted
-    assert "# issues: None" in formatted
-    assert "# important_infos:" in formatted
-    assert "## ---" in formatted
-    ctx = TaskCellContext(cur_line="", cur_content=formatted, notebook_path=None)
-    assert ctx.task_id == "ABC123"
-    assert ctx.task_subject == "Test Subject"
-    assert ctx.task_coding_prompt == "Write code"
-    assert ctx.task_verify_prompt == "Verify code"
-    assert ctx.task_summary_prompt == "Summarize"
-    assert ctx.task_result == "Success"
-    assert ctx.task_issue == "None"
-    assert ctx.task_important_infos == {"info": "value"}
-    assert ctx.task_supply_infos == [UserPromptResponse(prompt="foo", response="bar")]
-    assert ctx.task_confirm_infos == []
 
 
-def check_yaml_loaded(formatted):
-
-    yaml_str = ""
-    for line in formatted.split("\n"):
-        if line.startswith("# "):
-            yaml_str += line[2:] + "\n"
-    return yaml.safe_load(yaml_str)
+def make_markdown_cell(source, metadata=None):
+    return {"cell_type": "markdown", "source": source, "metadata": metadata or {}, "id": "testid"}
 
 
-def test_format_options_multiline_string():
-    ctx = TaskCellContext(cur_line="", cur_content="", notebook_path=None)
-    cell_options = {"description": "Line1\nLine2\nLine3"}
-    formatted = ctx.format_options(cell_options)
-    assert "# description: |-" in formatted
-    assert "#     Line1" in formatted
-    assert "#     Line2" in formatted
-    assert "#     Line3" in formatted
-    loaded = check_yaml_loaded(formatted)
-    assert loaded["description"] == "Line1\nLine2\nLine3"
+def test_cell_context_tags():
+    cell = make_code_cell("# BOT_CONTEXT:foo,bar\nprint('hi')", metadata={"tags": ["baz"]})
+    ctx = bc.CellContext(0, cell)
+    assert "CTX_FOO" in ctx.cell_tags
+    assert "CTX_BAR" in ctx.cell_tags
+    assert "baz" in ctx.cell_tags
+    assert ctx.cell_source == "print('hi')"
 
 
-def test_format_options_nested_dict_and_list():
-    ctx = TaskCellContext(cur_line="", cur_content="", notebook_path=None)
-    cell_options = {"nested": {"a": 1, "b": [2, 3, {"c": 4}]}}
-    formatted = ctx.format_options(cell_options)
-    assert "# nested:" in formatted
-    assert "#     a: 1" in formatted
-    assert "#     b:" in formatted
-    assert "#         - 2" in formatted
-    assert "#         - 3" in formatted
-    assert "#         - \n#             c: 4" in formatted
-    loaded = check_yaml_loaded(formatted)
-    assert loaded["nested"] == {"a": 1, "b": [2, 3, {"c": 4}]}
+def test_cell_context_is_code_context():
+    cell = make_code_cell("print('hi')")
+    ctx = bc.CellContext(0, cell)
+    assert ctx.is_code_context
 
 
-def test_format_options_with_special_characters():
-    ctx = TaskCellContext(cur_line="", cur_content="", notebook_path=None)
-    cell_options = {"special": "value:with:colon \"and quotes\" and 'single quotes'"}
-    formatted = ctx.format_options(cell_options)
-    assert "# special: 'value:with:colon \"and quotes\" and ''single quotes'''" in formatted
-    loaded = check_yaml_loaded(formatted)
-    assert loaded["special"] == "value:with:colon \"and quotes\" and 'single quotes'"
+def test_cell_context_is_task_context():
+    cell = make_markdown_cell("Some text", metadata={"tags": ["CTX_TASK"]})
+    ctx = bc.CellContext(0, cell)
+    assert ctx.is_task_context
 
 
-def test_format_options_empty_dict():
-    ctx = TaskCellContext(cur_line="", cur_content="", notebook_path=None)
-    cell_options = {}
-    formatted = ctx.format_options(cell_options)
-    assert "## Task Options:" in formatted
-    assert "## ---" in formatted
-    loaded = check_yaml_loaded(formatted)
-    assert loaded == None
+def test_code_cell_context_output_truncation():
+    cell = make_code_cell("print('hi')")
+    ctx = bc.CodeCellContext(0, cell)
+    long_output = "a" * (ctx.max_output_size + 10)
+    ctx.cell_output = long_output
+    out = ctx.cell_output
+    assert len(out) <= ctx.max_output_size + 3  # for "..."
 
 
-def make_cell_content_with_options(options_dict, code="print('hello')"):
-    yaml_str = yaml.safe_dump(options_dict, allow_unicode=True, sort_keys=False).strip()
-    lines = ["## Task Options:"]
-    for line in yaml_str.splitlines():
-        lines.append(f"# {line}")
-    lines.append("## ---")
-    lines.append(code)
-    return "\n".join(lines)
+def test_code_cell_context_error_truncation():
+    cell = make_code_cell("print('hi')")
+    ctx = bc.CodeCellContext(0, cell)
+    long_error = "e" * (ctx.max_error_size + 10)
+    ctx.cell_error = long_error
+    err = ctx.cell_error
+    assert len(err) <= ctx.max_error_size + 3
 
 
-def test_parse_bot_cell_basic_options():
-    options = {
-        "id": "XYZ789",
-        "subject": "Parse Test",
-        "coding_prompt": "Do something",
-        "verify_prompt": "Check it",
-        "summary_prompt": "Summarize it",
-        "result": "OK",
-        "issues": "None",
-        "important_infos": {"foo": "bar"},
-        "supply_infos": [],
-        "confirm_infos": [],
-    }
-    content = make_cell_content_with_options(options)
-    ctx = TaskCellContext(cur_line="", cur_content=content, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert ctx.task_id == "XYZ789"
-    assert ctx.task_subject == "Parse Test"
-    assert ctx.task_coding_prompt == "Do something"
-    assert ctx.task_verify_prompt == "Check it"
-    assert ctx.task_summary_prompt == "Summarize it"
-    assert ctx.task_result == "OK"
-    assert ctx.task_issue == "None"
-    assert ctx.task_important_infos == {"foo": "bar"}
-    assert ctx.task_supply_infos == []
-    assert ctx.task_confirm_infos == []
-    assert ctx.cell_code == "print('hello')"
+def test_code_cell_context_load_cell_outputs_stream():
+    outputs = [{"output_type": "stream", "name": "stdout", "text": "hello\n"}]
+    cell = make_code_cell("print('hi')", outputs=outputs)
+    ctx = bc.CodeCellContext(0, cell)
+    ctx.load_cell_outputs(cell)
+    assert "stdout" in ctx.cell_output
+    assert "hello" in ctx.cell_output
 
 
-def test_parse_bot_cell_with_stage_in_line():
-    options = {"id": "STAGE1"}
-    content = make_cell_content_with_options(options)
-    ctx = TaskCellContext(cur_line="-s teststage", cur_content=content, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert ctx.task_stage == "teststage"
-    assert ctx.task_id == "STAGE1"
+def test_code_cell_context_load_cell_outputs_error():
+    outputs = [{"output_type": "error", "ename": "ValueError", "evalue": "bad", "traceback": ["line1", "line2"]}]
+    cell = make_code_cell("raise ValueError()", outputs=outputs)
+    ctx = bc.CodeCellContext(0, cell)
+    ctx.load_cell_outputs(cell)
+    assert "ValueError" in ctx.cell_error
+    assert "bad" in ctx.cell_error
+    assert "Traceback" in ctx.cell_error
 
 
-def test_parse_bot_cell_with_stage_in_options_only():
-    options = {"id": "STAGE2", "stage": "stage_from_options"}
-    content = make_cell_content_with_options(options)
-    ctx = TaskCellContext(cur_line="", cur_content=content, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert ctx.task_stage == "stage_from_options"
-    assert ctx.task_id == "STAGE2"
+def test_agent_data_default():
+    d = bc.AgentData.default()
+    assert isinstance(d, dict)
 
 
-def test_parse_bot_cell_with_supply_and_confirm_infos():
-    options = {
-        "supply_infos": [{"prompt": "foo", "response": "bar"}],
-        "confirm_infos": [{"prompt": "baz", "response": "qux"}],
-    }
-    content = make_cell_content_with_options(options)
-    ctx = TaskCellContext(cur_line="", cur_content=content, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert isinstance(ctx.task_supply_infos, list)
-    assert isinstance(ctx.task_confirm_infos, list)
-    assert isinstance(ctx.task_supply_infos[0], UserPromptResponse)
-    assert ctx.task_supply_infos[0].prompt == "foo"
-    assert ctx.task_supply_infos[0].response == "bar"
-    assert ctx.task_confirm_infos[0].prompt == "baz"
-    assert ctx.task_confirm_infos[0].response == "qux"
+def test_agent_cell_context_parse_magic_argv():
+    cell = make_code_cell("%%bot -P -f planning -s stage1\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    assert ctx.agent_flow == "planning"
+    assert ctx.agent_stage == "stage1"
+    assert ctx.cell_type == bc.CellType.PLANNING
 
 
-def test_parse_bot_cell_without_options():
-    code = "print('no options')"
-    ctx = TaskCellContext(cur_line="", cur_content=code, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert ctx.cell_code == "print('no options')"
-    # All task_* fields should be default
-    assert ctx.task_id
-    assert ctx.task_subject == ""
-    assert ctx.task_coding_prompt == ""
-    assert ctx.task_verify_prompt == ""
-    assert ctx.task_summary_prompt == ""
-    assert ctx.task_result == ""
-    assert ctx.task_issue == ""
-    assert ctx.task_important_infos == {}
-    assert ctx.task_supply_infos == []
-    assert ctx.task_confirm_infos == []
+def test_agent_cell_context_load_data_from_source_yaml():
+    yaml_block = (
+        "%%bot\n" "## Task Options:\n" "# task_id: testid\n" "# subject: test subject\n" "## ---\n" "print('hi')"
+    )
+    cell = make_code_cell(yaml_block)
+    ctx = bc.AgentCellContext(0, cell)
+    assert ctx._agent_data["task_id"] == "testid"
+    assert ctx._agent_data["subject"] == "test subject"
 
 
-def test_parse_bot_cell_stops_options_on_non_comment():
-    # Should stop parsing options if a non-# line appears in options section
-    content = "## Task Options:\n# id: STOP\nnot_a_comment\n## ---\nprint('done')"
-    ctx = TaskCellContext(cur_line="", cur_content=content, notebook_path=None)
-    ctx.parse_bot_cell()
-    assert ctx.task_id == "STOP"
-    assert "not_a_comment" in ctx.cell_code
+def test_agent_cell_context_format_magic_line():
+    cell = make_code_cell("%%bot -s stage1 -f flow1\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    line = ctx.format_magic_line()
+    assert "%%bot" in line
+    assert "-s" in line
+    assert "-f" in line
+
+
+def test_notebook_context_cells_and_cur_task(tmp_path):
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [
+        nbformat.v4.new_code_cell("print('a')"),
+        nbformat.v4.new_code_cell("%%bot\nprint('b')"),
+        nbformat.v4.new_markdown_cell("Some text"),
+    ]
+    nb_path = tmp_path / "testnb.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    ctx = bc.NotebookContext("%%bot", "print('b')", str(nb_path))
+    cells = ctx.cells
+    assert isinstance(cells, list)
+    cur_task = ctx.cur_task
+    assert cur_task is None or isinstance(cur_task, bc.AgentCellContext)
+
+
+def test_format_cell_options_basic_fields():
+    cell = make_code_cell("%%bot\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    ctx._agent_data["task_id"] = "tid"
+    ctx._agent_data["subject"] = "subj"
+    options_str = ctx.format_cell_options()
+    assert "task_id: tid" in options_str
+    assert "subject: subj" in options_str
+    assert "## Task Options:" in options_str
+    assert "## ---" in options_str
+    assert "update_time" in options_str
+
+
+def test_format_cell_options_empty_returns_empty_string():
+    cell = make_code_cell("%%bot\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    # Clear all fields
+    for k in ctx._agent_data:
+        ctx._agent_data[k] = ""
+    options_str = ctx.format_cell_options()
+    assert options_str == ""
+
+
+def test_format_cell_options_json_field_serialization():
+    cell = make_code_cell("%%bot\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    # important_infos is a JSON field
+    ctx._agent_data["important_infos"] = {"foo": "bar"}
+    options_str = ctx.format_cell_options()
+    assert "important_infos:" in options_str
+    assert '"foo": "bar"' in options_str or "foo: bar" in options_str
+
+
+def test_format_cell_options_handles_list_field():
+    cell = make_code_cell("%%bot\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    ctx._agent_data["important_infos"] = [{"a": 1}, {"b": 2}]
+    options_str = ctx.format_cell_options()
+    assert "important_infos:" in options_str
+    assert '"a": 1' in options_str or '"b": 2' in options_str
+
+
+def test_format_cell_options_skips_none_and_falsey():
+    cell = make_code_cell("%%bot\nprint('hi')")
+    ctx = bc.AgentCellContext(0, cell)
+    ctx._agent_data["task_id"] = None
+    ctx._agent_data["subject"] = ""
+    ctx._agent_data["coding_prompt"] = False
+    options_str = ctx.format_cell_options()
+    # None, empty string, and False should not appear
+    assert "task_id:" not in options_str
+    assert "subject:" not in options_str
+    assert "coding_prompt:" not in options_str

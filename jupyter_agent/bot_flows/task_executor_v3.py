@@ -14,6 +14,7 @@ from ..bot_agents import (
     CodeExecutor,
     TaskStructureSummaryAgent,
     TaskStructureReasoningAgent,
+    OutputTaskResult,
 )
 from ..bot_agents.task_planner_v3 import TaskPlannerState
 
@@ -27,6 +28,7 @@ class TaskStage(str, Enum):
     REASONING = "reasoning"
     SUMMARY = "summary"
     COMPLETED = "completed"
+    OUTPUT_RESULT = "output_result"
 
 
 class TaskExecutorFlowV3(BaseTaskFlow):
@@ -79,6 +81,9 @@ class TaskExecutorFlowV3(BaseTaskFlow):
         StageTransition[TaskStage, bool](
             stage=TaskStage.COMPLETED,
             agent=CodeExecutor,
-            states={True: TaskStage.COMPLETED, False: TaskStage.DEBUGGING},
+            states={True: TaskStage.OUTPUT_RESULT, False: TaskStage.DEBUGGING},
+        ),
+        StageTransition[TaskStage, None](
+            stage=TaskStage.OUTPUT_RESULT, agent=OutputTaskResult, next_stage=TaskStage.COMPLETED
         ),
     ]

@@ -6,8 +6,9 @@ https://opensource.org/licenses/MIT
 """
 
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_RESULT
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_TEXT
+from .base import BaseChatAgent, AgentOutputFormat
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
+from ..bot_outputs import ReplyType
 
 TASK_REASONER_PROMPT = """\
 **角色定义**：
@@ -37,10 +38,10 @@ TASK_REASONER_PROMPT = """\
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前任务分析总结要求：
-{{ task.task_summary_prompt }}
+{{ task.summary_prompt }}
 
 ---
 
@@ -48,13 +49,13 @@ TASK_REASONER_PROMPT = """\
 """
 
 
-class TaskReasoningAgent(BaseTaskAgent):
+class TaskReasoningAgent(BaseChatAgent):
 
     PROMPT = TASK_REASONER_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_TEXT
+    OUTPUT_FORMAT = AgentOutputFormat.TEXT
     DISPLAY_REPLY = False
 
     def on_reply(self, reply: str):
-        self._C(Markdown("### 任务总结\n" + reply), reply_type=REPLY_TASK_RESULT)
+        _C(Markdown("### 任务总结\n" + reply), reply_type=ReplyType.TASK_RESULT)
         assert reply, "Reply is empty"
-        self.task_context.task_result = reply
+        self.task.set_data("result", reply)

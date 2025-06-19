@@ -6,88 +6,68 @@ https://opensource.org/licenses/MIT
 """
 
 import json
+import importlib
 
+from typing import Tuple, Any
+from enum import Enum, unique
 from IPython.display import Markdown
-from ..utils import ChatMixin
+from ..bot_outputs import _C, flush_output
+from ..bot_chat import BotChat
+from ..utils import no_indent
 
-_TASK_CONTEXTS = """
+_TASK_CONTEXTS = no_indent(
+    """
 **全局任务规划及子任务完成情况**：
 
 {% for cell in cells %}
-    {% if cell.type == "global_plan" and cell.source.strip() -%}
+    {% if cell.type == "planning" and cell.source.strip() %}
         {{ cell.source }}
-        {% for plan in cell.outputs -%}
-            {{ plan }}
-        {% endfor %}
-    {% elif cell.type == "task" and cell.subject.strip() -%}
-## 子任务[{{ cell.task_id }}] - {{ '已完成' if cell.outputs else '未完成' }}
+        {{ cell.result }}
+    {% elif cell.type == "task" and cell.subject.strip() %}
+        ## 子任务[{{ cell.task_id }}] - {{ '已完成' if cell.result else '未完成' }}
 
-        {% if cell.supply_infos -%}
-### 用户补充信息
+        ### 任务目标
 
-            {% for info in cell.supply_infos %}
-Q: {{ info.prompt }}
+        {{ cell.subject }}
 
-A: {{ info.response }}
+        ### 任务结果
 
-            {% endfor %}
-        {% endif %}
-### 任务目标
-
-{{ cell.subject }}
-
-### 任务结果
-
-        {% for output in cell.outputs -%}
-            {{ output }}
-        {% endfor %}
+        {{ cell.result }}
 
         {% if cell.important_infos %}
-### 任务结论中的重要信息(Important Infos)
+            ### 任务结论中的重要信息(Important Infos)
 
-```json
-{{ cell.important_infos | json }}
-```
-        {% endif %}
-        {% if cell.confirm_infos %}
-### 用户确认信息
-
-            {% for info in cell.confirm_infos %}
-Q: {{ info.prompt }}
-
-A: {{ info.response }}
-
-            {% endfor %}
-        {% endif %}
-    {% elif "TASK" in cell.context and cell.source.strip() -%}
+            ```json
+            {{ cell.important_infos | json }}
+            ```
+        {%+ endif %}
+    {% elif cell.is_task_context and cell.source.strip() %}
         {{ cell.source }}
     {% endif %}
 {% endfor %}
 """
+)
 
 
-_CODE_CONTEXTS = """
+_CODE_CONTEXTS = no_indent(
+    """
 **已执行的代码**：
 
 ```python
-{% set ns = namespace(cid=0) %}
-{% for cell in cells %}
-{% if cell.type == "task" and cell.source.strip() %}
-{% set ns.cid = ns.cid + 1 %}
-######## Cell[{{ ns.cid }}] for Task[{{ cell.task_id }}] ########
+{% for cell in cells +%}
+    {% if cell.type == "task" and cell.source.strip() %}
+        ######## Cell[{{ cell.cell_idx }}] for Task[{{ cell.task_id }}] ########
 
-{{ cell.source }}
+        {{ cell.source }}
+    {% elif cell.is_code_context and cell.source.strip() %}
+        ######## Cell[{{ cell.cell_idx }}] ########
 
-{% elif "CODE" in cell.context and cell.source.strip() %}
-{% set ns.cid = ns.cid + 1 %}
-######## Cell[{{ ns.cid }}] ########
-
-{{ cell.source }}
-
-{% endif %}
-{% endfor %}
+        {{ cell.source }}
+    {% endif %}
+{%+ endfor %}
 ```
 """
+)
 
 _TASK_OUTPUT_FORMAT = """
 {% if OUTPUT_FORMAT == "code" %}
@@ -131,41 +111,67 @@ PREDEFINE_PROMPT_BLOCKS = {
     "TASK_OUTPUT_FORMAT": _TASK_OUTPUT_FORMAT,
 }
 
-AGENT_OUTPUT_FORMAT_RAW = "raw"
-AGENT_OUTPUT_FORMAT_TEXT = "text"
-AGENT_OUTPUT_FORMAT_CODE = "code"
-AGENT_OUTPUT_FORMAT_JSON = "json"
-AGENT_COMBINE_REPLY_FIRST = "first"
-AGENT_COMBINE_REPLY_LAST = "last"
-AGENT_COMBINE_REPLY_LIST = "list"
-AGENT_COMBINE_REPLY_MERGE = "merge"
-AGENT_MODEL_TYPE_PLANNER = "planner"
-AGENT_MODEL_TYPE_CODING = "coding"
-AGENT_MODEL_TYPE_REASONING = "reasoning"
+
+@unique
+class AgentOutputFormat(str, Enum):
+    RAW = "raw"
+    TEXT = "text"
+    CODE = "code"
+    JSON = "json"
 
 
-class BaseTaskAgent(ChatMixin):
+@unique
+class AgentCombineReply(str, Enum):
+    FIRST = "first"
+    LAST = "last"
+    LIST = "list"
+    MERGE = "merge"
+
+
+@unique
+class AgentModelType(str, Enum):
+    DEFAULT = "default"
+    PLANNER = "planner"
+    CODING = "coding"
+    REASONING = "reasoning"
+
+
+class BaseAgent:
+    """基础代理类"""
+
+    def __init__(self, notebook_context):
+        self.notebook_context = notebook_context
+
+    @property
+    def task(self):
+        return self.notebook_context.cur_task
+
+    @property
+    def cells(self):
+        return self.notebook_context.cells
+
+
+class BaseChatAgent(BotChat, BaseAgent):
     """基础聊天代理类"""
 
     PROMPT = "You are a helpful assistant. {{ prompt }}\n\nAnswer:"
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_RAW
+    OUTPUT_FORMAT = AgentOutputFormat.RAW
     OUTPUT_CODE_LANG = "python"
     OUTPUT_JSON_SCHEMA = None  # Pydantic Model
     DISPLAY_REPLY = True
-    COMBINE_REPLY = AGENT_COMBINE_REPLY_MERGE
+    COMBINE_REPLY = AgentCombineReply.MERGE
     ACCEPT_EMPYT_REPLY = False
-    MODEL_TYPE = AGENT_MODEL_TYPE_REASONING
+    MODEL_TYPE = AgentModelType.REASONING
 
-    def __init__(self, notebook_context, task_context, base_url, api_key, model_name, debug_level=0):
+    def __init__(self, notebook_context, base_url, api_key, model_name, **chat_kwargs):
         """初始化基础任务代理"""
-        ChatMixin.__init__(self, base_url, api_key, model_name, debug_level=debug_level)
-        self.notebook_context = notebook_context
-        self.task_context = task_context
+        BaseAgent.__init__(self, notebook_context)
+        BotChat.__init__(self, base_url, api_key, model_name, **chat_kwargs)
 
     def prepare_contexts(self, **kwargs):
         contexts = {
-            "cells": self.notebook_context.cells,
-            "task": self.task_context,
+            "cells": self.cells,
+            "task": self.task,
             "OUTPUT_FORMAT": self.OUTPUT_FORMAT,
             "OUTPUT_CODE_LANG": self.OUTPUT_CODE_LANG,
         }
@@ -190,11 +196,11 @@ class BaseTaskAgent(ChatMixin):
         return messages
 
     def combine_raw_replies(self, replies):
-        if self.COMBINE_REPLY == AGENT_COMBINE_REPLY_FIRST:
+        if self.COMBINE_REPLY == AgentCombineReply.FIRST:
             return replies[0]["raw"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_LAST:
+        elif self.COMBINE_REPLY == AgentCombineReply.LAST:
             return replies[-1]["raw"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_MERGE:
+        elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
             return "".join([reply["raw"] for reply in replies])
         else:
             raise ValueError("Unsupported combine_reply: {} for raw output".format(self.COMBINE_REPLY))
@@ -203,33 +209,33 @@ class BaseTaskAgent(ChatMixin):
         code_replies = [
             reply for reply in replies if reply["type"] == "code" and reply["lang"] == self.OUTPUT_CODE_LANG
         ]
-        if self.COMBINE_REPLY == AGENT_COMBINE_REPLY_FIRST:
+        if self.COMBINE_REPLY == AgentCombineReply.FIRST:
             return code_replies[0]["content"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_LAST:
+        elif self.COMBINE_REPLY == AgentCombineReply.LAST:
             return code_replies[-1]["content"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_MERGE:
+        elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
             return "\n".join([reply["content"] for reply in code_replies])
         else:
             raise ValueError("Unsupported combine_reply: {} for code output".format(self.COMBINE_REPLY))
 
     def combine_json_replies(self, replies):
         json_replies = [reply for reply in replies if reply["type"] == "code" and reply["lang"] == "json"]
-        if self.COMBINE_REPLY == AGENT_COMBINE_REPLY_FIRST:
+        if self.COMBINE_REPLY == AgentCombineReply.FIRST:
             json_obj = json.loads(json_replies[0]["content"])
             if self.OUTPUT_JSON_SCHEMA:
                 json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
             return json_obj
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_LAST:
+        elif self.COMBINE_REPLY == AgentCombineReply.LAST:
             json_obj = json.loads(json_replies[-1]["content"])
             if self.OUTPUT_JSON_SCHEMA:
                 json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
             return json_obj
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_LIST:
+        elif self.COMBINE_REPLY == AgentCombineReply.LIST:
             json_objs = [json.loads(reply["content"]) for reply in json_replies]
             if self.OUTPUT_JSON_SCHEMA:
                 json_objs = [self.OUTPUT_JSON_SCHEMA(**json_obj) for json_obj in json_objs]
             return json_objs
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_MERGE:
+        elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
             json_obj = {}
             for json_reply in json_replies:
                 json_obj.update(json.loads(json_reply["content"]))
@@ -241,31 +247,31 @@ class BaseTaskAgent(ChatMixin):
 
     def combine_text_replies(self, replies):
         text_replies = [reply for reply in replies if reply["type"] == "text"]
-        if self.COMBINE_REPLY == AGENT_COMBINE_REPLY_FIRST:
+        if self.COMBINE_REPLY == AgentCombineReply.FIRST:
             return text_replies[0]["content"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_LAST:
+        elif self.COMBINE_REPLY == AgentCombineReply.LAST:
             return text_replies[-1]["content"]
-        elif self.COMBINE_REPLY == AGENT_COMBINE_REPLY_MERGE:
+        elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
             return "".join([reply["content"] for reply in text_replies])
         else:
             raise ValueError("Unsupported combine_reply: {} for text output".format(self.COMBINE_REPLY))
 
     def combine_replies(self, replies):
-        if self.OUTPUT_FORMAT == AGENT_OUTPUT_FORMAT_RAW:
+        if self.OUTPUT_FORMAT == AgentOutputFormat.RAW:
             return self.combine_raw_replies(replies).strip()
-        elif self.OUTPUT_FORMAT == AGENT_OUTPUT_FORMAT_TEXT:
+        elif self.OUTPUT_FORMAT == AgentOutputFormat.TEXT:
             return self.combine_text_replies(replies).strip()
-        elif self.OUTPUT_FORMAT == AGENT_OUTPUT_FORMAT_CODE:
+        elif self.OUTPUT_FORMAT == AgentOutputFormat.CODE:
             return self.combine_code_replies(replies).strip()
-        elif self.OUTPUT_FORMAT == AGENT_OUTPUT_FORMAT_JSON:
+        elif self.OUTPUT_FORMAT == AgentOutputFormat.JSON:
             return self.combine_json_replies(replies)
         else:
             raise ValueError("Unsupported output format: {}".format(self.OUTPUT_FORMAT))
 
-    def on_reply(self, reply):
-        self._C(Markdown(reply))
+    def on_reply(self, reply) -> Tuple[bool, Any] | Any:
+        _C(Markdown(reply))
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs) -> Tuple[bool, Any]:
         contexts = self.prepare_contexts(**kwargs)
         messages = self.create_messages(contexts)
         replies = self.chat(messages.get(), display_reply=self.DISPLAY_REPLY)
@@ -273,6 +279,7 @@ class BaseTaskAgent(ChatMixin):
         if not self.ACCEPT_EMPYT_REPLY and not reply:
             raise ValueError("Reply is empty")
         result = self.on_reply(reply)
+        flush_output()
         if not isinstance(result, tuple):
             return False, result
         else:
@@ -281,65 +288,37 @@ class BaseTaskAgent(ChatMixin):
 
 class AgentFactory:
 
-    def __init__(
-        self,
-        notebook_context,
-        task_context,
-        planner_api_url=None,
-        planner_api_key="API_KEY",
-        planner_model=None,
-        coding_api_url=None,
-        coding_api_key="API_KEY",
-        coding_model=None,
-        reasoning_api_url=None,
-        reasoning_api_key="API_KEY",
-        reasoning_model=None,
-        debug_level=0,
-    ):
+    def __init__(self, notebook_context, **chat_kwargs):
         self.notebook_context = notebook_context
-        self.task_context = task_context
-        self.debug_level = debug_level
-        self.models = {
-            AGENT_MODEL_TYPE_PLANNER: {
-                "api_url": planner_api_url,
-                "api_key": planner_api_key,
-                "model": planner_model,
-            },
-            AGENT_MODEL_TYPE_CODING: {
-                "api_url": coding_api_url,
-                "api_key": coding_api_key,
-                "model": coding_model,
-            },
-            AGENT_MODEL_TYPE_REASONING: {
-                "api_url": reasoning_api_url,
-                "api_key": reasoning_api_key,
-                "model": reasoning_model,
-            },
+        self.chat_kwargs = chat_kwargs
+        self.models = {AgentModelType.DEFAULT: {"api_url": None, "api_key": None, "model": None}}
+
+    def config_model(self, agent_model, api_url, api_key, model_name):
+        self.models[agent_model] = {
+            "api_url": api_url,
+            "api_key": api_key,
+            "model": model_name,
         }
 
     def __call__(self, agent_class):
 
-        from .. import bot_agents
-
         if isinstance(agent_class, str):
+            bot_agents = importlib.import_module("..bot_agents", __package__)
             agent_class = getattr(bot_agents, agent_class)
-        else:
-            if not hasattr(bot_agents, agent_class.__name__):
-                raise ValueError("Unsupported agent class: {}".format(agent_class))
 
-        if issubclass(agent_class, BaseTaskAgent):
-            agent_model = agent_class.MODEL_TYPE if hasattr(agent_class, "MODEL_TYPE") else AGENT_MODEL_TYPE_REASONING
+        if issubclass(agent_class, BaseChatAgent):
+            agent_model = agent_class.MODEL_TYPE if hasattr(agent_class, "MODEL_TYPE") else AgentModelType.DEFAULT
             return agent_class(
                 notebook_context=self.notebook_context,
-                task_context=self.task_context,
-                base_url=self.models[agent_model]["api_url"],
-                api_key=self.models[agent_model]["api_key"],
-                model_name=self.models[agent_model]["model"],
-                debug_level=self.debug_level,
+                base_url=self.models.get(agent_model, {}).get("api_url")
+                or self.models[AgentModelType.DEFAULT]["api_url"],
+                api_key=self.models.get(agent_model, {}).get("api_key")
+                or self.models[AgentModelType.DEFAULT]["api_key"],
+                model_name=self.models.get(agent_model, {}).get("model")
+                or self.models[AgentModelType.DEFAULT]["model"],
+                **self.chat_kwargs,
             )
+        elif issubclass(agent_class, BaseAgent):
+            return agent_class(notebook_context=self.notebook_context)
         else:
-            return agent_class(
-                notebook_context=self.notebook_context,
-                task_context=self.task_context,
-                debug_level=self.debug_level,
-            )
+            raise ValueError("Unsupported agent class: {}".format(agent_class))

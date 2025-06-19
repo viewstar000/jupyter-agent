@@ -6,8 +6,9 @@ https://opensource.org/licenses/MIT
 """
 
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_RESULT
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_TEXT
+from .base import BaseChatAgent, AgentOutputFormat
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C
+from ..bot_outputs import ReplyType
 
 TASK_SUMMARY_PROMPT = """\
 **角色定义**：
@@ -41,22 +42,21 @@ TASK_SUMMARY_PROMPT = """\
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前子任务代码需求：
-{{ task.task_coding_prompt }}
+{{ task.coding_prompt }}
 
 ### 当前代码：
 ```python
-{{ task.cell_code }}
+{{ task.source }}
 ```
 
 ### 当前代码执行的输出与结果：
-{{ task.cell_output }}
-{{ task.cell_result }}
+{{ task.output }}
 
 ### 当前任务总结要求：
-{{ task.task_summary_prompt }}
+{{ task.summary_prompt }}
 
 ---
 
@@ -64,13 +64,13 @@ TASK_SUMMARY_PROMPT = """\
 """
 
 
-class TaskSummaryAgent(BaseTaskAgent):
+class TaskSummaryAgent(BaseChatAgent):
 
     PROMPT = TASK_SUMMARY_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_TEXT
+    OUTPUT_FORMAT = AgentOutputFormat.TEXT
     DISPLAY_REPLY = False
 
     def on_reply(self, reply: str):
-        self._C(Markdown("### 任务总结\n" + reply), reply_type=REPLY_TASK_RESULT)
+        _C(Markdown("### 任务总结\n" + reply), reply_type=ReplyType.TASK_RESULT)
         assert reply, "Reply is empty"
-        self.task_context.task_result = reply
+        self.task.set_data("result", reply)

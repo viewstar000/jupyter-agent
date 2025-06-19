@@ -9,8 +9,9 @@ from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_ISSUE, REPLY_TASK_RESULT
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_JSON
+from .base import BaseChatAgent, AgentOutputFormat
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
+from ..bot_outputs import ReplyType
 
 
 TASK_SUMMARY_PROMPT = """\
@@ -54,22 +55,21 @@ TASK_SUMMARY_PROMPT = """\
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前子任务代码需求：
-{{ task.task_coding_prompt }}
+{{ task.coding_prompt }}
 
 ### 当前代码：
 ```python
-{{ task.cell_code }}
+{{ task.source }}
 ```
 
 ### 当前输出：
-{{ task.cell_output }}
-{{ task.cell_result }}
+{{ task.output }}
 
 ### 当前任务总结要求：
-{{ task.task_summary_prompt }}
+{{ task.summary_prompt }}
 
 ---
 
@@ -100,34 +100,35 @@ class TaskSummaryOutput(BaseModel):
     )
 
 
-class TaskVerifySummaryAgent(BaseTaskAgent):
+class TaskVerifySummaryAgent(BaseChatAgent):
 
     PROMPT = TASK_SUMMARY_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_JSON
+    OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskSummaryOutput
 
     def on_reply(self, reply: TaskSummaryOutput):
 
         if reply.state == TaskSummaryState.SUCCESS:
-            self._D(Markdown("### 任务总结"))
+            _O(Markdown("### 任务总结"))
             assert reply.summary, "Summary is empty"
-            self._C(Markdown(reply.summary), reply_type=REPLY_TASK_RESULT)
-            self.task_context.task_result = reply.summary
+            _C(Markdown(reply.summary), reply_type=ReplyType.TASK_RESULT)
+            self.task.set_data("result", reply.summary)
             return False, reply.state
         else:
-            self._D(Markdown("### 任务验证不通过！"))
+            _M("### 任务验证不通过！\n")
             assert reply.enhancement, "Enhancement is empty"
             assert reply.enhancement.issues, "Issues is empty"
             assert reply.enhancement.code_prompt, "Code prompt is empty"
             assert reply.enhancement.summary_prompt, "Summary prompt is empty"
-            self.task_context.task_issue = ""
+            task_issue = ""
             if reply.enhancement.issues:
                 for issue in reply.enhancement.issues:
-                    self.task_context.task_issue += "- {}\n".format(issue)
-            self.task_context.task_coding_prompt = reply.enhancement.code_prompt
-            self.task_context.task_summary_prompt = reply.enhancement.summary_prompt
-            self._D(Markdown(self.task_context.task_issue), reply_type=REPLY_TASK_ISSUE)
-            self._D(Markdown("### 修改后的子任务信息"))
-            self._D(Markdown(f"### 当前子任务代码需求：\n\n{reply.enhancement.code_prompt}"))
-            self._D(Markdown(f"### 当前子任务总结要求：\n\n{reply.enhancement.summary_prompt}"))
+                    task_issue += "- {}\n".format(issue)
+            self.task.set_data("issue", task_issue)
+            self.task.set_data("coding_prompt", reply.enhancement.code_prompt)
+            self.task.set_data("summary_prompt", reply.enhancement.summary_prompt)
+            _M(task_issue)
+            _M("### 修改后的子任务信息\n")
+            _M(f"### 当前子任务代码需求：\n\n{reply.enhancement.code_prompt}")
+            _M(f"### 当前子任务总结要求：\n\n{reply.enhancement.summary_prompt}")
             return True, reply.state

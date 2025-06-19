@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
-from ..utils import DebugMixin
-from ..bot_agents.base import BaseTaskAgent
+from ..bot_agents.base import BaseAgent
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, set_stage, flush_output
 
 TASK_AGENT_STATE_ERROR = "_AGENT_STATE_ERROR_32534526_"
 TASK_STAGE_START = "start"
@@ -35,12 +35,12 @@ class StageNext[ST](BaseModel):
 
 class StageTransition[ST, AS](BaseModel):
     stage: ST | str
-    agent: Type[BaseTaskAgent | DebugMixin] | str
+    agent: Type[BaseAgent] | str
     states: Dict[AS | str, StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = {}
     next_stage: Optional[StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = None
 
 
-class BaseTaskFlow(DebugMixin):
+class BaseTaskFlow:
     """
     基础任务流程
     """
@@ -49,13 +49,19 @@ class BaseTaskFlow(DebugMixin):
     START_STAGE = TASK_STAGE_START
     STOP_STAGES = [TASK_STAGE_COMPLETED]
 
-    def __init__(self, notebook_context, task_context, agent_factory, debug_level=None):
-        DebugMixin.__init__(self, debug_level)
+    def __init__(self, notebook_context, agent_factory):
         self.notebook_context = notebook_context
-        self.task_context = task_context
         self.agent_factory = agent_factory
         self.stage_transitions = {}
         self.prepare_stage_transitions()
+
+    @property
+    def task(self):
+        return self.notebook_context.cur_task
+
+    @property
+    def cells(self):
+        return self.notebook_context.cells
 
     def prepare_stage_transitions(self):
         for st in self.STAGE_TRANSITIONS:
@@ -145,24 +151,26 @@ class BaseTaskFlow(DebugMixin):
         n_tries = 0
         stage = stage or self.START_STAGE
         while n_tries <= max_tries:
-
             try:
+                stage_name = stage.value if isinstance(stage, Enum) else stage
+                stage_name = stage_name.replace(".", "-").capitalize()
+                set_stage(stage_name)
                 agent = self.get_stage_agent(stage)
-                self._D(Markdown(f"**Executing** stage `{stage}` with agent `{type(agent).__name__}` ..."))
+                _M(f"**Executing** stage `{stage}` with agent `{type(agent).__name__}` ...")
                 failed, state = agent()
             except Exception as e:
-                self._D(Markdown(f"**Error** during task execution stage `{stage}`: `{type(e)}`: `{e}`"))
-                self._D(Markdown(f"```python\n{traceback.format_exc()}\n```"))
+                _M(f"**Error** during task execution stage `{stage}`: `{type(e)}`: `{e}`")
+                _M(f"```python\n{traceback.format_exc()}\n```")
                 state = TASK_AGENT_STATE_ERROR
                 failed = True
 
             if state != TASK_AGENT_STATE_ERROR:
                 # Agent did not fail, check if we have reached the final stage
                 next_stage = self.get_next_stage(stage, state, TaskAction.CONTINUE)
-                self.task_context.task_stage = next_stage
-                self.task_context.update_bot_cell()
+                self.task.agent_stage = next_stage
+                self.task.update_cell()
                 if next_stage in self.STOP_STAGES:
-                    self._D(Markdown(f"Task execution **Stopped** at stage `{next_stage}`"))
+                    _M(f"Task execution **Stopped** at stage `{next_stage}`")
                     break
 
             if failed:
@@ -172,29 +180,30 @@ class BaseTaskFlow(DebugMixin):
             if failed or stage_confirm:
                 # Agent failed or we need to confirm
                 message = self.get_prompt_message(stage, state, failed)
-                self._D(Markdown("**Confirm**: " + message))
+                _M("**Confirm**: " + message)
+                flush_output()
                 action = self.match_action(input(message))
                 next_stage = self.get_next_stage(stage, state, action)
-                self.task_context.task_stage = next_stage
-                self.task_context.update_bot_cell()
+                self.task.agent_stage = next_stage
+                self.task.update_cell()
                 if action == TaskAction.STOP:
-                    self._D(Markdown(f"Task execution **Stopped**, and set next stage to `{next_stage}`"))
+                    _M(f"Task execution **Stopped**, and set next stage to `{next_stage}`")
                     break
                 elif n_tries > max_tries:
-                    self._D(Markdown(f"**Max tries reached** during task execution stage `{stage}`, **Stop!**"))
+                    _M(f"**Max tries reached** during task execution stage `{stage}`, **Stop!**")
                     break
                 else:
-                    self._D(Markdown(f"**Action**: `{action}` transits stage to `{next_stage}`"))
+                    _M(f"**Action**: `{action}` transits stage to `{next_stage}`")
                     stage = next_stage
             else:
                 # Agent succeeded, transit to the next stage without confirmation
                 next_stage = self.get_next_stage(stage, state, TaskAction.CONTINUE)
-                self.task_context.task_stage = next_stage
-                self.task_context.update_bot_cell()
-                self._D(Markdown(f"**Transits** stage to `{next_stage}`"))
+                self.task.agent_stage = next_stage
+                self.task.update_cell()
+                _M(f"**Transits** stage to `{next_stage}`")
                 stage = next_stage
 
             if not stage_continue:
                 break
-
+        flush_output()
         return stage

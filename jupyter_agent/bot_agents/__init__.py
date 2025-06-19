@@ -5,8 +5,9 @@ This software is released under the MIT License.
 https://opensource.org/licenses/MIT
 """
 
-from .base import BaseTaskAgent, AgentFactory
+from .base import BaseChatAgent, AgentFactory
 from .master_planner import MasterPlannerAgent
+from .output_task_result import OutputTaskResult
 from .task_code_executor import CodeExecutor
 from .task_planner_v1 import TaskPlannerAgentV1
 from .task_planner_v2 import TaskPlannerAgentV2
@@ -22,7 +23,7 @@ from .task_structrue_reasoner import TaskStructureReasoningAgent
 
 __all__ = [
     "AgentFactory",
-    "BaseTaskAgent",
+    "BaseChatAgent",
     "CodeDebugerAgent",
     "CodeExecutor",
     "MasterPlannerAgent",
@@ -37,4 +38,5 @@ __all__ = [
     "TaskVerifyAgent",
     "TaskVerifyState",
     "TaskVerifySummaryAgent",
+    "OutputTaskResult",
 ]

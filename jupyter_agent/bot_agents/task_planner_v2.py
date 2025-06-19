@@ -8,8 +8,9 @@ https://opensource.org/licenses/MIT
 from enum import Enum
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_RESULT, REPLY_TASK_ISSUE
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_JSON, AGENT_MODEL_TYPE_PLANNER
+from .base import BaseChatAgent, AgentOutputFormat, AgentModelType
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
+from ..bot_outputs import ReplyType
 
 
 TASK_PLANNER_PROMPT = """\
@@ -56,23 +57,22 @@ TASK_PLANNER_PROMPT = """\
 
 ---
 
-{% if task.task_subject and task.task_issue %}
+{% if task.subject and task.issue %}
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前子任务代码：
 ```python
-{{ task.cell_code }}
+{{ task.source }}
 ```
 
 ### 当前子任务输出：
-{{ task.cell_output }}
-{{ task.cell_result }}
+{{ task.output }}
 
 ### 当前子任务存在的问题：
-{{ task.task_issue }}
+{{ task.issue }}
 
 ---
 
@@ -130,44 +130,43 @@ class TaskPlannerOutput(BaseModel):
     )
 
 
-class TaskPlannerAgentV2(BaseTaskAgent):
+class TaskPlannerAgentV2(BaseChatAgent):
     """任务规划器代理类"""
 
     PROMPT = TASK_PLANNER_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_JSON
+    OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskPlannerOutput
-    MODEL_TYPE = AGENT_MODEL_TYPE_PLANNER
+    MODEL_TYPE = AgentModelType.PLANNER
 
     def on_reply(self, reply: TaskPlannerOutput):
         """执行规划逻辑"""
         if reply.state == TaskPlannerState.GLOBAL_FINISHED:
-            self._C(Markdown("全局目标已达成，任务完成！"), reply_type=REPLY_TASK_RESULT)
+            _C(Markdown("全局目标已达成，任务完成！"), reply_type=ReplyType.TASK_RESULT)
             return False, reply.state
         elif reply.state == TaskPlannerState.REQUEST_INFO:
             assert reply.request_info_prompt, "Request info prompt is empty"
-            self._D(Markdown(f"### 需要补充更详细的信息\n\n{reply.request_info_prompt}"), reply_type=REPLY_TASK_ISSUE)
+            _O(Markdown(f"### 需要补充更详细的信息\n\n{reply.request_info_prompt}"), reply_type=ReplyType.TASK_ISSUE)
             return True, reply.state
         elif reply.state == TaskPlannerState.CODING_PLANNED:
             assert reply.subtask_subject, "Subtask subject is empty"
             assert reply.subtask_coding_prompt, "Subtask coding prompt is empty"
             assert reply.subtask_summary_prompt, "Subtask summary prompt is empty"
-            self._D(
-                Markdown(
-                    f"### 子任务: {reply.subtask_subject}\n"
-                    f"- Coding: {reply.subtask_coding_prompt}\n"
-                    f"- Summary: {reply.subtask_summary_prompt}\n"
-                )
+            _M(
+                f"### 子任务: {reply.subtask_subject}\n"
+                f"- Coding: {reply.subtask_coding_prompt}\n"
+                f"- Summary: {reply.subtask_summary_prompt}\n"
             )
-            self.task_context.task_subject = reply.subtask_subject
-            self.task_context.task_coding_prompt = reply.subtask_coding_prompt
-            self.task_context.task_summary_prompt = reply.subtask_summary_prompt
+
+            self.task.set_data("subject", reply.subtask_subject)
+            self.task.set_data("coding_prompt", reply.subtask_coding_prompt)
+            self.task.set_data("summary_prompt", reply.subtask_summary_prompt)
             return False, reply.state
         elif reply.state == TaskPlannerState.REASONING_PLANNED:
             assert reply.subtask_subject, "Subtask subject is empty"
             assert reply.subtask_summary_prompt, "Subtask summary prompt is empty"
-            self._D(Markdown(f"### 子任务: {reply.subtask_subject}\n" f"- Summary: {reply.subtask_summary_prompt}\n"))
-            self.task_context.task_subject = reply.subtask_subject
-            self.task_context.task_summary_prompt = reply.subtask_summary_prompt
+            _M(f"### 子任务: {reply.subtask_subject}\n" f"- Summary: {reply.subtask_summary_prompt}\n")
+            self.task.set_data("subject", reply.subtask_subject)
+            self.task.set_data("summary_prompt", reply.subtask_summary_prompt)
             return False, reply.state
         else:
             raise ValueError(f"Unknown task planner state: {reply.state}")

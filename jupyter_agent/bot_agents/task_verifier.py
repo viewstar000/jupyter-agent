@@ -9,8 +9,9 @@ from enum import Enum
 from typing import List
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..utils import REPLY_TASK_ISSUE
-from .base import BaseTaskAgent, AGENT_OUTPUT_FORMAT_JSON
+from .base import BaseChatAgent, AgentOutputFormat
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
+from ..bot_outputs import ReplyType
 
 
 TASK_VERIFY_PROMPT = """\
@@ -40,22 +41,21 @@ TASK_VERIFY_PROMPT = """\
 **当前子任务信息**:
 
 ### 当前子任务目标：
-{{ task.task_subject }}
+{{ task.subject }}
 
 ### 当前子任务代码需求：
-{{ task.task_coding_prompt }}
+{{ task.coding_prompt }}
 
 ### 当前代码：
 ```python
-{{ task.cell_code }}
+{{ task.source }}
 ```
 
 ### 当前输出：
-{{ task.cell_output }}
-{{ task.cell_result }}
+{{ task.output }}
 
 ### 当前任务验证条件：
-{{ task.task_verify_prompt }}
+{{ task.verify_prompt }}
 
 ---
 
@@ -77,22 +77,23 @@ class TaskVerifyOutput(BaseModel):
     )
 
 
-class TaskVerifyAgent(BaseTaskAgent):
+class TaskVerifyAgent(BaseChatAgent):
 
     PROMPT = TASK_VERIFY_PROMPT
-    OUTPUT_FORMAT = AGENT_OUTPUT_FORMAT_JSON
+    OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskVerifyOutput
 
     def on_reply(self, reply: TaskVerifyOutput):
 
         if reply.state == TaskVerifyState.PASSED:
-            self._D(Markdown("### 任务验证通过！"))
+            _M("### 任务验证通过！")
             return False, reply.state
         else:
-            self._D(Markdown("### 任务验证不通过！"))
-            self.task_context.task_issue = ""
+            _M("### 任务验证不通过！\n")
+            task_issue = ""
             if reply.issues:
                 for issue in reply.issues:
-                    self.task_context.task_issue += "- {}\n".format(issue)
-            self._D(Markdown(self.task_context.task_issue), reply_type=REPLY_TASK_ISSUE)
+                    task_issue += "- {}\n".format(issue)
+            self.task.set_data("issue", task_issue)
+            _M(task_issue)
             return True, reply.state

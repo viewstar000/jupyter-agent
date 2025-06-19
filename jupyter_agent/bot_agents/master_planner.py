@@ -6,8 +6,8 @@ https://opensource.org/licenses/MIT
 """
 
 from IPython.display import Markdown
-from .base import BaseTaskAgent, AGENT_MODEL_TYPE_PLANNER
-from ..utils import REPLY_TASK_RESULT
+from .base import BaseChatAgent, AgentModelType
+from ..bot_outputs import _C, ReplyType
 
 MASTER_PLANNER_PROMPT = """\
 **角色定义**：
@@ -26,7 +26,7 @@ MASTER_PLANNER_PROMPT = """\
 
 **用户需求**：
 
-{{ task.cell_code }}
+{{ task.source }}
 
 ---
 
@@ -34,12 +34,12 @@ MASTER_PLANNER_PROMPT = """\
 """
 
 
-class MasterPlannerAgent(BaseTaskAgent):
+class MasterPlannerAgent(BaseChatAgent):
     """全局规划器代理类"""
 
     PROMPT = MASTER_PLANNER_PROMPT
     DISPLAY_REPLY = False
-    MODEL_TYPE = AGENT_MODEL_TYPE_PLANNER
+    MODEL_TYPE = AgentModelType.PLANNER
 
     def on_reply(self, reply):
-        self._C(Markdown(reply), reply_type=REPLY_TASK_RESULT)
+        _C(Markdown(reply), reply_type=ReplyType.TASK_RESULT)
