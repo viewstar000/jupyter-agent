@@ -45,19 +45,12 @@ pip install /path/to/upyter-agent/dist/jupyter_agent-202506.1-py3-none-any.whl
 # 加载扩展的Magic命令
 %load_ext jupyter_agent.bot_magics
 # 设备模型调用的API地址，不同的Agent可以调用不同的模型，这里以调用lmstudio本地部署的模型为例
-%config BotMagics.reasoning_api_url = 'http://127.0.0.1:1234/v1'
-%config BotMagics.reasoning_api_key = 'API_KEY'
-%config BotMagics.reasoning_model = 'qwen3-30b-a3b' 
-%config BotMagics.planner_api_url = 'http://127.0.0.1:1234/v1'
-%config BotMagics.planner_api_key = 'API_KEY'
-%config BotMagics.planner_model = 'qwen3-30b-a3b' 
-%config BotMagics.coding_api_url = 'http://127.0.0.1:1234/v1'
-%config BotMagics.coding_api_key = 'API_KEY'
-%config BotMagics.coding_model = 'devstral-small-2505-mlx'
+%config BotMagics.default_api_url = 'http://127.0.0.1:1234/v1'
+%config BotMagics.default_api_key = 'API_KEY'
+%config BotMagics.default_model_name = 'qwen3-30b-a3b' 
+%config BotMagics.coding_model_name = 'devstral-small-2505-mlx'
 # 设置当前Notebook的路径，由于vscode中运行里无法自动获取到该路径，需要手工指定
 %config BotMagics.notebook_path = globals()["__vsc_ipynb_file__"]
-# 是否输出调式信息，0-3
-%config BotMagics.debug_level = 0
 ```
 
 ### 全局任务规划

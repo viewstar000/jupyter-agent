@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyter-agent"
-version = "202506.01"
+version = "2025.6.100"
 description = "调用LLM实现Jupyter代码的自动生成、执行、调试等功能"
 authors = [
     { name="viewstar000" }
 ]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 urls = { "Homepage" = "https://github.com/viewstar000/jupyter-agent" }
 classifiers = [
     "Programming Language :: Python :: 3",
