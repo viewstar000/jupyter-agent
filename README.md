@@ -53,6 +53,8 @@ pip install /path/to/jupyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 
 ### 全局配置
 
+基础配置
+
 ```python
 # 加载扩展的Magic命令
 %load_ext jupyter_agent.bot_magics
@@ -62,12 +64,26 @@ pip install /path/to/jupyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 %config BotMagics.default_api_key = 'API_KEY'
 %config BotMagics.default_model_name = 'qwen3-30b-a3b' 
 %config BotMagics.coding_model_name = 'devstral-small-2505-mlx'
+```
 
-# 设置当前Notebook的路径，由于vscode中运行里无法自动获取到该路径，需要手工指定
+扩展配置
+
+```python
+# 设置当前Notebook的路径，当无法自动获取时需要手工指定，以Vscode中的Notebook为例
 %config BotMagics.notebook_path = globals()["__vsc_ipynb_file__"]
 
 # 设置是否保存任务数据到Metadata，只有Vscode中安装了jupyter-agent-extension后才支持
 %config BotMagics.support_save_meta = True
+
+# 设置日志级别，可选值为DEBUG、INFO、WARN、ERROR、FATAL，默认为INFO
+%config BotMagics.logging_level = 'DEBUG'
+
+# 设置是否显示思考过程，默认为True
+%config BotMagics.display_think = True
+
+# 设置是否显示发送给出LLM的消息和LLM的回答，默认为False
+%config BotMagics.display_message = True
+%config BotMagics.display_response = True
 ```
 
 ### 全局任务规划
@@ -96,7 +112,7 @@ pip install /path/to/jupyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 
 ![docs/image-task-empty.png](https://raw.githubusercontent.com/viewstar000/jupyter-agent/refs/heads/main/docs/image-task-empty.png)
 
-> 注：由于cell magic命令无法直接定位当前cell，需要通过cell的内容进行匹配，因此首次执行%%bot命令时，需要在cell中额外添加一些随机字符
+> **注：**由于cell magic命令无法直接定位当前cell，需要通过cell的内容进行匹配，因此首次执行%%bot命令时，需要在cell中额外添加一些随机字符
 
 接下来工具会调用相应的agent自动生成并执行相应步骤的代码，如下图：
 
@@ -107,6 +123,8 @@ pip install /path/to/jupyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 在子任务执行的过程中，默认情况下每一个环节工具都会给出如下图的确认提示，可跟据实际情况输入相应的选项，或直接回车确认继续执行下一环节。
 
 ![docs/image-task-confirm.png](https://raw.githubusercontent.com/viewstar000/jupyter-agent/refs/heads/main/docs/image-task-confirm.png)
+
+> **注：**在执行`%%bot`命令前，必须确保当前Notebook已保存，否则Agent无法读取到完整的Notebook上下文。建议开启Notebook编辑器自动保存功能。
 
 更详细用法可参考[示例Notebook](https://github.com/viewstar000/jupyter-agent/blob/main/examples/data_loader.ipynb)
 
@@ -173,6 +191,10 @@ pip install /path/to/jupyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 
 After installing `jupyter-agent` and `jupyter-agent-extension`, you can use `%%bot` magic command to work on task planning, code generation and execution.
 
+### Configuration
+
+Basic Configuration:
+
 First create or open a notebook in Vscode, create a new cell, enter and execute the following commands:
 
 ```python
@@ -184,12 +206,26 @@ First create or open a notebook in Vscode, create a new cell, enter and execute 
 %config BotMagics.default_api_key = 'API_KEY'
 %config BotMagics.default_model_name = 'qwen3-30b-a3b' 
 %config BotMagics.coding_model_name = 'devstral-small-2505-mlx'
+```
 
-# Set the path of the current Notebook, which cannot be automatically obtained in vscode when running, you need to manually specify
+Advanced Configuration:
+
+```python
+# Set the current notebook path, when it is not automatically obtained, it needs to be manually specified, for example, in Vscode Notebook
 %config BotMagics.notebook_path = globals()["__vsc_ipynb_file__"]
 
 # Set whether to save task data to Metadata, only Vscode installed with jupyter-agent-extension supports
 %config BotMagics.support_save_meta = True
+
+# Set the log level, available values are DEBUG、INFO、WARN、ERROR、FATAL, default is INFO
+%config BotMagics.logging_level = 'DEBUG'
+
+# Set whether to display thinking process, default is True
+%config BotMagics.display_think = True
+
+# Set whether to display messages sent to LLM and LLM responses, default is False
+%config BotMagics.display_message = True
+%config BotMagics.display_response = True
 ```
 
 Now, you can use the `%%bot` command to work on task rules and code generation.
@@ -226,6 +262,8 @@ After global task planning, the tool will generate code for each subtask, and yo
 After generating code for a subtask, the tool will call the corresponding agent to generate the code, and then execute it.
 
 ![docs/image-task-confirm.png](https://raw.githubusercontent.com/viewstar000/jupyter-agent/refs/heads/main/docs/image-task-confirm.png)
+
+> **Note:** Before using the `%%bot` command, you must ensure that the current notebook has been saved, otherwise the agent will not be able to read the full context of the notebook. Suggested to enable the notebook editor's automatic save function.
 
 For more details, please refer to [example notebook](https://github.com/viewstar000/jupyter-agent/blob/main/examples/data_loader.ipynb)
 

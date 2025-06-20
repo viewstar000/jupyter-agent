@@ -61,10 +61,33 @@ class BotMagics(Magics, Configurable):
 
         return options
 
+    def ensure_notebook_path(self):
+        if self.notebook_path:
+            return self.notebook_path
+        result = self.shell and self.shell.run_cell("globals().get('__vsc_ipynb_file__')")
+        if result and result.success and result.result:
+            self.notebook_path = result.result
+            return self.notebook_path
+        try:
+            self.notebook_path = str(ipynbname.path())
+            return self.notebook_path
+        except Exception as e:
+            _F(f"Failed to get notebook path: {e}")
+            return None
+
     @cell_magic
     def bot(self, line, cell):
         """Jupyter cell magic: %%bot"""
         try:
+            if not self.ensure_notebook_path():
+                _O(
+                    Markdown(
+                        "The notebook path is **empty**, we can't do anything.\n\n"
+                        "Please set the notebook path in the configuration, and **RERUN** the cell again.\n\n"
+                        'For example: `%config BotMagics.notebook_path = globals()["__vsc_ipynb_file__"]`'
+                    )
+                )
+                return
             AgentCellContext.SUPPORT_SAVE_META = self.support_save_meta
             reset_output(stage="Logging", logging_level=self.logging_level)
             _I("Cell magic %%bot executing ...")
@@ -85,8 +108,6 @@ class BotMagics(Magics, Configurable):
             options = self.parse_args(line)
             _D(f"Cell magic called with options: {options}")
             set_logging_level(options.logging_level)
-            self.notebook_path = self.notebook_path or ipynbname.path()
-            _D(f"Cell magic called with notebook path: {self.notebook_path}")
             nb_context = NotebookContext(line, cell, notebook_path=self.notebook_path)
             agent_factory = AgentFactory(
                 nb_context,
