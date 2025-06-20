@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyter-agent"
-version = "2025.6.100"
+version = "2025.6.101"
 description = "调用LLM实现Jupyter代码的自动生成、执行、调试等功能"
 authors = [
     { name="viewstar000" }
@@ -30,7 +30,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["captcha_adversarial*"]
+include = ["jupyter_agent*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md", "*.txt"]

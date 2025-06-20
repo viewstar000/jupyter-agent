@@ -7,7 +7,16 @@
 - 提供`%%bot`指令，在juyter环境中，通过调用LLM实现代码生成、执行、调试等能力
 - 支持调用OpenAI兼容API，实现LLM相关的功能
 
-## 打包（Build）
+## 安装
+
+```bash
+# 激活目标环境(视情况选择)
+source /path/to/target_env/bin/activate
+
+pip install jupyter-agent
+```
+
+## 源码打包安全（Build）
 
 ```bash
 # 下载代码
@@ -24,15 +33,12 @@ python -m build
 
 # 退出打包环境
 deactivate
-```
 
-## 安装
-
-```bash
 # 激活目标环境
 source /path/to/target_env/bin/activate
+
 # 安装编译好的wheel包
-pip install /path/to/upyter-agent/dist/jupyter_agent-202506.1-py3-none-any.whl
+pip install /path/to/upyter-agent/dist/jupyter_agent-xxxx-py3-none-any.whl
 ```
 
 ## 使用方法
