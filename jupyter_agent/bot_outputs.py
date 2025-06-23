@@ -11,6 +11,8 @@ import datetime
 import jinja2
 
 from enum import Enum
+from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field
 from IPython.display import display, Markdown
 from .utils import no_indent, no_wrap
 
@@ -171,6 +173,40 @@ LOGGING_LEVELS = {
 }
 
 
+class BaseEvalutionRecord(BaseModel):
+    timestamp: float = 0
+    notebook_name: str = ""
+    eval_type: str = "BASE"
+    cell_index: int = -1
+    execution_duration: float = 0.0
+    is_success: bool = False
+    correct_score: float = 0.0
+
+
+class StageEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "STAGE"
+    flow: str = ""
+    stage: str = ""
+    planning_score: float = 0.0
+    coding_score: float = 0.0
+    important_score: float = 0.0
+    user_supply_score: float = 0.0
+
+
+class FlowEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "FLOW"
+    flow: str = ""
+    stage_count: int = 0
+    planning_score: float = 0.0
+
+
+class NotebookEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "NOTEBOOK"
+    flow_count: int = 0
+    global_planning_score: float = 0.0
+    subflow_planning_score: float = 0.0
+
+
 class AgentOutput:
     """
     AgentOutput 是一个用于在 Jupyter Notebook 中显示 Agent 输出的类。
@@ -193,6 +229,7 @@ class AgentOutput:
         self._agent_data_timestamp = None
         self._agent_data = {}
         self._logging_records = []
+        self._evaluation_records = []
 
     @property
     def content(self):
@@ -226,6 +263,8 @@ class AgentOutput:
                     "jupyter-agent-data": self._agent_data,
                 }
             )
+        if self._evaluation_records:
+            metadata["jupyter-agent-evaluation-records"] = [record.model_dump() for record in self._evaluation_records]
         return metadata
 
     def display(self, stage=None, force=False, wait=True):
@@ -320,6 +359,20 @@ class AgentOutput:
             )
         self.display(force=False, wait=False)
 
+    def log_evaluation(self, record: BaseEvalutionRecord):
+        assert isinstance(
+            record, BaseEvalutionRecord
+        ), "record must be an instance of BaseEvalutionRecord or its subclass"
+        if record.timestamp == 0:
+            record.timestamp = time.time()
+        self._evaluation_records.append(record)
+        self.log(
+            f"Evaluation: {record.eval_type}[{record.cell_index}] duration: {record.execution_duration:.2f}s "
+            f"success: {record.is_success} correct: {record.correct_score:.2f}",
+            level="INFO",
+        )
+        self.display(force=False, wait=False)
+
 
 __agent_output = None
 
@@ -361,6 +414,14 @@ def output_markdown(content, stage=None):
 
 def output_agent_data(**kwargs):
     get_output().output_agent_data(**kwargs)
+
+
+def output_evaluation(record: BaseEvalutionRecord):
+    """
+    输出评估记录到 AgentOutput 中。
+    :param record: 评估记录对象，必须是 BaseEvalutionRecord 的子类。
+    """
+    get_output().log_evaluation(record)
 
 
 def clear_output(stage=None, clear_metadata=False):

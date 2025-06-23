@@ -43,9 +43,12 @@ class BotMagics(Magics, Configurable):
     display_message = Bool(False, help="Display chat message").tag(config=True)
     display_think = Bool(True, help="Display chatthink response").tag(config=True)
     display_response = Bool(False, help="Display chat full response").tag(config=True)
+    support_save_meta = Bool(False, help="Support save metadata to cell").tag(config=True)
     notebook_path = Unicode(None, allow_none=True, help="Path to Notebook file").tag(config=True)
     default_task_flow = Unicode("v3", allow_none=True, help="Default task flow").tag(config=True)
-    support_save_meta = Bool(False, help="Support save metadata to cell").tag(config=True)
+    default_max_tries = Int(3, help="Default max tries for task execution").tag(config=True)
+    default_step_mode = Bool(False, help="Default step mode for task execution").tag(config=True)
+    default_auto_confirm = Bool(False, help="Default auto confirm for task execution").tag(config=True)
 
     def parse_args(self, line):
         """解析命令行参数"""
@@ -54,9 +57,21 @@ class BotMagics(Magics, Configurable):
         parser.add_argument("-P", "--planning", action="store_true", default=False, help="Run in planning mode")
         parser.add_argument("-s", "--stage", type=str, default=None, help="Task stage")
         parser.add_argument("-f", "--flow", type=str, default=self.default_task_flow, help="Flow name")
-        parser.add_argument("-m", "--max-tries", type=int, default=3, help="Max tries")
-        parser.add_argument("-S", "--step-mode", action="store_true", default=False, help="Run in single step mode")
-        parser.add_argument("-Y", "--auto-confirm", action="store_true", default=False, help="Run without confirm")
+        parser.add_argument("-m", "--max-tries", type=int, default=self.default_max_tries, help="Max tries")
+        parser.add_argument(
+            "-S",
+            "--step-mode",
+            action="store_true",
+            default=self.default_step_mode,
+            help="Run in single step mode",
+        )
+        parser.add_argument(
+            "-Y",
+            "--auto-confirm",
+            action="store_true",
+            default=self.default_auto_confirm,
+            help="Run without confirm",
+        )
         options, _ = parser.parse_known_args(shlex.split(line.strip()))
 
         return options
@@ -116,16 +131,28 @@ class BotMagics(Magics, Configurable):
                 display_response=self.display_response,
             )
             agent_factory.config_model(
-                AgentModelType.DEFAULT, self.default_api_url, self.default_api_key, self.default_model_name
+                AgentModelType.DEFAULT,
+                self.default_api_url,
+                self.default_api_key,
+                self.default_model_name,
             )
             agent_factory.config_model(
-                AgentModelType.PLANNER, self.planner_api_url, self.planner_api_key, self.planner_model_name
+                AgentModelType.PLANNER,
+                self.planner_api_url,
+                self.planner_api_key,
+                self.planner_model_name,
             )
             agent_factory.config_model(
-                AgentModelType.CODING, self.coding_api_url, self.coding_api_key, self.coding_model_name
+                AgentModelType.CODING,
+                self.coding_api_url,
+                self.coding_api_key,
+                self.coding_model_name,
             )
             agent_factory.config_model(
-                AgentModelType.REASONING, self.reasoning_api_url, self.reasoning_api_key, self.reasoning_model_name
+                AgentModelType.REASONING,
+                self.reasoning_api_url,
+                self.reasoning_api_key,
+                self.reasoning_model_name,
             )
             if options.planning:
                 flow = MasterPlannerFlow(nb_context, agent_factory)
@@ -138,7 +165,12 @@ class BotMagics(Magics, Configurable):
                     flow = TaskExecutorFlowV3(nb_context, agent_factory)
                 else:
                     raise ValueError(f"Unknown flow: {options.flow}")
-            flow(options.stage, options.max_tries, not options.step_mode, not options.auto_confirm)
+            flow(
+                options.stage,
+                options.max_tries,
+                not options.step_mode,
+                not options.auto_confirm,
+            )
         except Exception as e:
             traceback.print_exc()
 

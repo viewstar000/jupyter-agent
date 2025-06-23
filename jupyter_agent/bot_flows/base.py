@@ -5,6 +5,7 @@ This software is released under the MIT License.
 https://opensource.org/licenses/MIT
 """
 
+import time
 import traceback
 
 from pydantic import BaseModel
@@ -12,7 +13,8 @@ from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
-from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, set_stage, flush_output
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
+from ..bot_outputs import set_stage, flush_output, output_evaluation, FlowEvalutionRecord, StageEvalutionRecord
 
 TASK_AGENT_STATE_ERROR = "_AGENT_STATE_ERROR_32534526_"
 TASK_STAGE_START = "start"
@@ -146,11 +148,15 @@ class BaseTaskFlow:
         ns = self._get_next_stage_trans(stage, state, action)
         return ns.stage
 
-    def __call__(self, stage, max_tries=3, stage_continue=True, stage_confirm=True):
+    def __call__(self, stage, max_tries=5, stage_continue=True, stage_confirm=True):
 
         n_tries = 0
+        flow_duration = 0.0
+        stage_count = 0
+        # Initialize the task stage
         stage = stage or self.START_STAGE
         while n_tries <= max_tries:
+            stage_st = time.time()
             try:
                 stage_name = stage.value if isinstance(stage, Enum) else stage
                 stage_name = stage_name.replace(".", "-").capitalize()
@@ -163,6 +169,19 @@ class BaseTaskFlow:
                 _M(f"```python\n{traceback.format_exc()}\n```")
                 state = TASK_AGENT_STATE_ERROR
                 failed = True
+            stage_count += 1
+            stage_duration = time.time() - stage_st
+            flow_duration += stage_duration
+            _M(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
+            output_evaluation(
+                StageEvalutionRecord(
+                    cell_index=self.task.cell_idx,
+                    flow=type(self).__name__,
+                    stage=str(stage),
+                    execution_duration=stage_duration,
+                    is_success=not failed,
+                )
+            )
 
             if state != TASK_AGENT_STATE_ERROR:
                 # Agent did not fail, check if we have reached the final stage
@@ -176,9 +195,12 @@ class BaseTaskFlow:
             if failed:
                 # Agent failed
                 n_tries += 1
+                if n_tries > max_tries:
+                    _M(f"**Max flow tries reached** during task execution stage `{stage}`, **Stop!**")
+                    break
 
-            if failed or stage_confirm:
-                # Agent failed or we need to confirm
+            if stage_confirm:
+                # We need to confirm
                 message = self.get_prompt_message(stage, state, failed)
                 _M("**Confirm**: " + message)
                 flush_output()
@@ -189,14 +211,11 @@ class BaseTaskFlow:
                 if action == TaskAction.STOP:
                     _M(f"Task execution **Stopped**, and set next stage to `{next_stage}`")
                     break
-                elif n_tries > max_tries:
-                    _M(f"**Max tries reached** during task execution stage `{stage}`, **Stop!**")
-                    break
                 else:
                     _M(f"**Action**: `{action}` transits stage to `{next_stage}`")
                     stage = next_stage
             else:
-                # Agent succeeded, transit to the next stage without confirmation
+                # transit to the next stage without confirmation
                 next_stage = self.get_next_stage(stage, state, TaskAction.CONTINUE)
                 self.task.agent_stage = next_stage
                 self.task.update_cell()
@@ -205,5 +224,16 @@ class BaseTaskFlow:
 
             if not stage_continue:
                 break
+        # Finalize the task execution
+        _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
+        output_evaluation(
+            FlowEvalutionRecord(
+                cell_index=self.task.cell_idx,
+                flow=type(self).__name__,
+                stage_count=stage_count,
+                execution_duration=flow_duration,
+                is_success=next_stage in self.STOP_STAGES,
+            )
+        )
         flush_output()
         return stage
