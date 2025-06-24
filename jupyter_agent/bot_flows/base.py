@@ -14,11 +14,13 @@ from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
-from ..bot_outputs import set_stage, flush_output, output_evaluation, FlowEvalutionRecord, StageEvalutionRecord
+from ..bot_outputs import set_stage, flush_output, output_evaluation
+from ..bot_outputs import FlowEvalutionRecord, StageEvalutionRecord, NotebookEvalutionRecord
 
 TASK_AGENT_STATE_ERROR = "_AGENT_STATE_ERROR_32534526_"
 TASK_STAGE_START = "start"
 TASK_STAGE_COMPLETED = "completed"
+TASK_STAGE_GLOBAL_FINISHED = "global_finished"
 
 
 class TaskAction(str, Enum):
@@ -49,7 +51,7 @@ class BaseTaskFlow:
 
     STAGE_TRANSITIONS: List[StageTransition] = []
     START_STAGE = TASK_STAGE_START
-    STOP_STAGES = [TASK_STAGE_COMPLETED]
+    STOP_STAGES = [TASK_STAGE_COMPLETED, TASK_STAGE_GLOBAL_FINISHED]
 
     def __init__(self, notebook_context, agent_factory):
         self.notebook_context = notebook_context
@@ -190,6 +192,7 @@ class BaseTaskFlow:
                 self.task.update_cell()
                 if next_stage in self.STOP_STAGES:
                     _M(f"Task execution **Stopped** at stage `{next_stage}`")
+                    stage = next_stage
                     break
 
             if failed:
@@ -210,6 +213,7 @@ class BaseTaskFlow:
                 self.task.update_cell()
                 if action == TaskAction.STOP:
                     _M(f"Task execution **Stopped**, and set next stage to `{next_stage}`")
+                    stage = next_stage
                     break
                 else:
                     _M(f"**Action**: `{action}` transits stage to `{next_stage}`")
@@ -225,15 +229,20 @@ class BaseTaskFlow:
             if not stage_continue:
                 break
         # Finalize the task execution
-        _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
-        output_evaluation(
-            FlowEvalutionRecord(
-                cell_index=self.task.cell_idx,
-                flow=type(self).__name__,
-                stage_count=stage_count,
-                execution_duration=flow_duration,
-                is_success=next_stage in self.STOP_STAGES,
+        stage_name = stage.value if isinstance(stage, Enum) else stage
+        if stage_name == TASK_STAGE_GLOBAL_FINISHED:
+            _M("Task execution **finished** globally.")
+            output_evaluation(NotebookEvalutionRecord(cell_index=self.task.cell_idx, is_success=True))
+        elif stage_name == TASK_STAGE_COMPLETED:
+            _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
+            output_evaluation(
+                FlowEvalutionRecord(
+                    cell_index=self.task.cell_idx,
+                    flow=type(self).__name__,
+                    stage_count=stage_count,
+                    execution_duration=flow_duration,
+                    is_success=True,
+                )
             )
-        )
         flush_output()
         return stage

@@ -11,6 +11,7 @@ from .base import BaseTaskFlow, StageTransition, TASK_STAGE_START, TASK_STAGE_CO
 class MasterPlannerFlow(BaseTaskFlow):
 
     STAGE_TRANSITIONS = [
-        StageTransition(stage=TASK_STAGE_START, agent="MasterPlannerAgent", next_stage=TASK_STAGE_START)
+        StageTransition(stage=TASK_STAGE_START, agent="MasterPlannerAgent", next_stage=TASK_STAGE_COMPLETED),
+        StageTransition(stage=TASK_STAGE_COMPLETED, agent="OutputTaskResult", next_stage=TASK_STAGE_COMPLETED),
     ]
-    STOP_STAGES = [TASK_STAGE_START]
+    STOP_STAGES = [TASK_STAGE_COMPLETED]

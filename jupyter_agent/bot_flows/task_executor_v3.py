@@ -6,7 +6,14 @@ https://opensource.org/licenses/MIT
 """
 
 from enum import Enum
-from .base import BaseTaskFlow, StageTransition, StageNext, TaskAction
+from .base import (
+    BaseTaskFlow,
+    StageTransition,
+    StageNext,
+    TaskAction,
+    TASK_STAGE_COMPLETED,
+    TASK_STAGE_GLOBAL_FINISHED,
+)
 from ..bot_agents import (
     TaskPlannerAgentV3,
     TaskCodingAgent,
@@ -27,14 +34,15 @@ class TaskStage(str, Enum):
     DEBUGGING = "debugging"
     REASONING = "reasoning"
     SUMMARY = "summary"
-    COMPLETED = "completed"
     OUTPUT_RESULT = "output_result"
+    COMPLETED = TASK_STAGE_COMPLETED
+    GLOBAL_FINISHED = TASK_STAGE_GLOBAL_FINISHED
 
 
 class TaskExecutorFlowV3(BaseTaskFlow):
 
     START_STAGE = TaskStage.PLANNING
-    STOP_STAGES = [TaskStage.COMPLETED, TaskStage.PLANNING_PAUSED]
+    STOP_STAGES = [TaskStage.COMPLETED, TaskStage.PLANNING_PAUSED, TaskStage.GLOBAL_FINISHED]
     STAGE_TRANSITIONS = [
         StageTransition[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING,
@@ -43,7 +51,7 @@ class TaskExecutorFlowV3(BaseTaskFlow):
                 TaskPlannerState.CODING_PLANNED: TaskStage.CODING,
                 TaskPlannerState.REASONING_PLANNED: TaskStage.REASONING,
                 TaskPlannerState.REQUEST_INFO: TaskStage.PLANNING_PAUSED,
-                TaskPlannerState.GLOBAL_FINISHED: TaskStage.COMPLETED,
+                TaskPlannerState.GLOBAL_FINISHED: TaskStage.GLOBAL_FINISHED,
             },
         ),
         StageTransition[TaskStage, TaskPlannerState](
@@ -85,5 +93,8 @@ class TaskExecutorFlowV3(BaseTaskFlow):
         ),
         StageTransition[TaskStage, None](
             stage=TaskStage.OUTPUT_RESULT, agent=OutputTaskResult, next_stage=TaskStage.COMPLETED
+        ),
+        StageTransition[TaskStage, None](
+            stage=TaskStage.GLOBAL_FINISHED, agent=OutputTaskResult, next_stage=TaskStage.GLOBAL_FINISHED
         ),
     ]

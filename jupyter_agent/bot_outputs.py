@@ -187,7 +187,6 @@ class StageEvalutionRecord(BaseEvalutionRecord):
     eval_type: str = "STAGE"
     flow: str = ""
     stage: str = ""
-    planning_score: float = 0.0
     coding_score: float = 0.0
     important_score: float = 0.0
     user_supply_score: float = 0.0
@@ -203,8 +202,7 @@ class FlowEvalutionRecord(BaseEvalutionRecord):
 class NotebookEvalutionRecord(BaseEvalutionRecord):
     eval_type: str = "NOTEBOOK"
     flow_count: int = 0
-    global_planning_score: float = 0.0
-    subflow_planning_score: float = 0.0
+    planning_score: float = 0.0
 
 
 class AgentOutput:

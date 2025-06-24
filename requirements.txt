@@ -1,8 +1,9 @@
-ipython
-nbformat
 ipynbname
-openai
-traitlets
-pyyaml
+ipython
 jinja2
+nbclient
+nbformat
+openai
 pydantic
+pyyaml
+traitlets

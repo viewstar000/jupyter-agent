@@ -18,14 +18,15 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-    "ipython",
-    "nbformat",
     "ipynbname",
-    "openai",
-    "traitlets",
-    "pyyaml",
+    "ipython",
     "jinja2",
-    "pydantic"
+    "nbclient",
+    "nbformat",
+    "openai",
+    "pydantic",
+    "pyyaml",
+    "traitlets",
 ]
 
 [project.entry-points.console_scripts]

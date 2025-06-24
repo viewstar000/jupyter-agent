@@ -13,6 +13,7 @@ import nbformat
 
 from pathlib import Path
 from nbclient.client import NotebookClient
+from .bot_outputs import NotebookEvalutionRecord
 
 
 def run_notebook(
@@ -41,8 +42,13 @@ def run_notebook(
         print("Running notebook:", input_path)
         nb = nbformat.read(f, as_version=4)
 
+    start_time = 0
+    is_global_finished = False
+
     def save_notebook(**kwargs):
         """Save the executed notebook to the specified output path."""
+        nonlocal is_global_finished
+
         if kwargs:
             cell_idx = kwargs.get("cell_index", 0)
             cell_type = kwargs.get("cell", {}).get("cell_type")
@@ -55,7 +61,6 @@ def run_notebook(
                 if payload.get("source") == "set_next_input" and payload.get("replace") is True:
                     print(f"CELL[{cell_idx}] Replacing cell with set_next_input payload")
                     nb.cells[cell_idx].source = payload.get("text", "")
-
             cell_agent_data_timestamp = cell_meta.get("jupyter-agent-data-timestamp", 0)
             output_agent_data_timestamp = cell_agent_data_timestamp
             for output in cell_outputs:
@@ -74,6 +79,11 @@ def run_notebook(
                             nb.cells[cell_idx].metadata["jupyter-agent-data"] = {}
                         nb.cells[cell_idx].metadata["jupyter-agent-data"].update(output_meta["jupyter-agent-data"])
                     for record in output_meta.get("jupyter-agent-evaluation-records", []):
+                        record["notebook_name"] = output_path
+                        if record["eval_type"] == "NOTEBOOK":
+                            record["execution_duration"] = time.time() - start_time
+                            is_global_finished = True
+                            del nb.cells[cell_idx + 1 :]  # Remove all cells after the notebook cell
                         print(
                             f"CELL[{cell_idx}] Evaluating record: {record['eval_type']} "
                             f"duration: {record['execution_duration']:.2f}s "
@@ -82,7 +92,6 @@ def run_notebook(
                         )
                         if evaluation_path:
                             with open(evaluation_path, "a") as eval_file:
-                                record["notebook_name"] = output_path
                                 eval_file.write(json.dumps(record) + "\n")
             print(f"CELL[{cell_idx}] Saving executed {cell_type} cell - {cell_id}: {cell_exec_count}")
         else:
@@ -117,10 +126,30 @@ def run_notebook(
 
     # Run it
     print("Executing notebook...")
+    start_time = time.time()
     client.execute()
-
-    # Save it
     save_notebook()
+    print("Notebook execution completed.")
+
+    # If the notebook did not finish globally, append an evaluation record
+    if not is_global_finished:
+        print("Notebook execution did not finish globally, appending evaluation records.")
+        record = NotebookEvalutionRecord(
+            notebook_name=output_path,
+            eval_type="NOTEBOOK",
+            execution_duration=time.time() - start_time,
+            is_success=False,
+            correct_score=0.0,
+        )
+        print(
+            f"Global evaluation record: {record.eval_type} "
+            f"duration: {record.execution_duration:.2f}s "
+            f"success: {record.is_success} "
+            f"correct: {record.correct_score:.2f}"
+        )
+        if evaluation_path:
+            with open(evaluation_path, "a") as eval_file:
+                eval_file.write(json.dumps(record.model_dump()) + "\n")
 
 
 def main():
