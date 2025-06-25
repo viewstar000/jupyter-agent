@@ -63,7 +63,7 @@ class BotChat:
         self.base_url = base_url
         self.api_key = api_key
         self.model_name = model_name
-        self.dispaly_think = chat_kwargs.get("dispaly_think", self.display_think)
+        self.display_think = chat_kwargs.get("display_think", self.display_think)
         self.display_message = chat_kwargs.get("display_message", self.display_message)
         self.display_response = chat_kwargs.get("display_response", self.display_response)
 
@@ -143,7 +143,7 @@ class BotChat:
                 if token == "<think>":
                     think_block = _read_think_block(iter_tokens)
                     raw_think_block = token + think_block + "</think>"
-                    if (self.dispaly_think or display_reply) and think_block and think_block.strip():
+                    if (self.display_think or display_reply) and think_block and think_block.strip():
                         _B(think_block, title="Thought Block")
                     if ret_think_block and (ret_empty_block or think_block and think_block.strip()):
                         yield {"type": "think", "content": think_block, "raw": raw_think_block}

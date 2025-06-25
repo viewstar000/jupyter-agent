@@ -13,7 +13,7 @@ import nbformat
 
 from pathlib import Path
 from nbclient.client import NotebookClient
-from .bot_outputs import NotebookEvalutionRecord
+from .bot_outputs import NotebookEvalutionRecord, FlowEvalutionRecord, StageEvalutionRecord, BaseEvalutionRecord
 
 
 def run_notebook(
@@ -45,6 +45,19 @@ def run_notebook(
     start_time = 0
     is_global_finished = False
 
+    def save_evaluation_record(record):
+        nonlocal evaluation_path
+
+        print(
+            f"CELL[{record.cell_index}] Evaluation: {record.eval_type}[{record.evaluator}] "
+            f"duration: {record.execution_duration:.2f}s "
+            f"success: {record.is_success} "
+            f"correct: {record.correct_score:.2f}"
+        )
+        if evaluation_path:
+            with open(evaluation_path, "a") as eval_file:
+                eval_file.write(record.model_dump_json() + "\n")
+
     def save_notebook(**kwargs):
         """Save the executed notebook to the specified output path."""
         nonlocal is_global_finished
@@ -63,6 +76,8 @@ def run_notebook(
                     nb.cells[cell_idx].source = payload.get("text", "")
             cell_agent_data_timestamp = cell_meta.get("jupyter-agent-data-timestamp", 0)
             output_agent_data_timestamp = cell_agent_data_timestamp
+            is_bot_cell = False
+            is_flow_completed = False
             for output in cell_outputs:
                 if output["output_type"] == "display_data":
                     output_meta = output.get("metadata", {})
@@ -78,21 +93,41 @@ def run_notebook(
                         if "jupyter-agent-data" not in nb.cells[cell_idx].metadata:
                             nb.cells[cell_idx].metadata["jupyter-agent-data"] = {}
                         nb.cells[cell_idx].metadata["jupyter-agent-data"].update(output_meta["jupyter-agent-data"])
+
                     for record in output_meta.get("jupyter-agent-evaluation-records", []):
-                        record["notebook_name"] = output_path
+                        is_bot_cell = True
                         if record["eval_type"] == "NOTEBOOK":
-                            record["execution_duration"] = time.time() - start_time
+                            record = NotebookEvalutionRecord(**record)
+                            record.timestamp = record.timestamp or time.time()
+                            record.notebook_name = output_path
+                            record.execution_duration = time.time() - start_time
                             is_global_finished = True
+                            is_flow_completed = True
                             del nb.cells[cell_idx + 1 :]  # Remove all cells after the notebook cell
-                        print(
-                            f"CELL[{cell_idx}] Evaluating record: {record['eval_type']} "
-                            f"duration: {record['execution_duration']:.2f}s "
-                            f"success: {record['is_success']} "
-                            f"correct: {record['correct_score']:.2f}"
-                        )
-                        if evaluation_path:
-                            with open(evaluation_path, "a") as eval_file:
-                                eval_file.write(json.dumps(record) + "\n")
+                        elif record["eval_type"] == "FLOW":
+                            record = FlowEvalutionRecord(**record)
+                            record.timestamp = record.timestamp or time.time()
+                            record.notebook_name = output_path
+                            is_flow_completed = True
+                        elif record["eval_type"] == "STAGE":
+                            record = StageEvalutionRecord(**record)
+                            record.timestamp = record.timestamp or time.time()
+                            record.notebook_name = output_path
+                        else:
+                            record = BaseEvalutionRecord(**record)
+                            record.timestamp = record.timestamp or time.time()
+                            record.notebook_name = output_path
+                        save_evaluation_record(record)
+            if is_bot_cell and not is_flow_completed:
+                record = FlowEvalutionRecord(
+                    timestamp=time.time(),
+                    notebook_name=output_path,
+                    evaluator="bot",
+                    eval_type="FLOW",
+                    cell_index=cell_idx,
+                    is_success=False,
+                )
+                save_evaluation_record(record)
             print(f"CELL[{cell_idx}] Saving executed {cell_type} cell - {cell_id}: {cell_exec_count}")
         else:
             print(f"Saving executed notebook to: {output_path}")
@@ -136,20 +171,14 @@ def run_notebook(
         print("Notebook execution did not finish globally, appending evaluation records.")
         record = NotebookEvalutionRecord(
             notebook_name=output_path,
+            timestamp=time.time(),
+            evaluator="bot",
             eval_type="NOTEBOOK",
             execution_duration=time.time() - start_time,
             is_success=False,
             correct_score=0.0,
         )
-        print(
-            f"Global evaluation record: {record.eval_type} "
-            f"duration: {record.execution_duration:.2f}s "
-            f"success: {record.is_success} "
-            f"correct: {record.correct_score:.2f}"
-        )
-        if evaluation_path:
-            with open(evaluation_path, "a") as eval_file:
-                eval_file.write(json.dumps(record.model_dump()) + "\n")
+        save_evaluation_record(record)
 
 
 def main():

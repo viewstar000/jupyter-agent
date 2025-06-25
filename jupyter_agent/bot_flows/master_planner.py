@@ -6,6 +6,7 @@ https://opensource.org/licenses/MIT
 """
 
 from .base import BaseTaskFlow, StageTransition, TASK_STAGE_START, TASK_STAGE_COMPLETED
+from ..bot_evaluators.flow_global_planning import FlowGlobalPlanningEvaluator
 
 
 class MasterPlannerFlow(BaseTaskFlow):
@@ -15,3 +16,4 @@ class MasterPlannerFlow(BaseTaskFlow):
         StageTransition(stage=TASK_STAGE_COMPLETED, agent="OutputTaskResult", next_stage=TASK_STAGE_COMPLETED),
     ]
     STOP_STAGES = [TASK_STAGE_COMPLETED]
+    FLOW_EVALUATOR = FlowGlobalPlanningEvaluator

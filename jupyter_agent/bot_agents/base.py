@@ -7,11 +7,13 @@ https://opensource.org/licenses/MIT
 
 import json
 import importlib
+import traceback
 
 from typing import Tuple, Any
 from enum import Enum, unique
+from pydantic import BaseModel, Field
 from IPython.display import Markdown
-from ..bot_outputs import _C, flush_output
+from ..bot_outputs import _C, _O, _W, _T, flush_output
 from ..bot_chat import BotChat
 from ..utils import no_indent
 
@@ -161,6 +163,7 @@ class BaseChatAgent(BotChat, BaseAgent):
     DISPLAY_REPLY = True
     COMBINE_REPLY = AgentCombineReply.MERGE
     ACCEPT_EMPYT_REPLY = False
+    REPLY_ERROR_RETRIES = 2
     MODEL_TYPE = AgentModelType.REASONING
 
     def __init__(self, notebook_context, base_url, api_key, model_name, **chat_kwargs):
@@ -185,8 +188,16 @@ class BaseChatAgent(BotChat, BaseAgent):
                 }
             else:
                 json_example = {}
-            contexts["OUTPUT_JSON_SCHEMA"] = json.dumps(json_schema, indent=2, ensure_ascii=False)
-            contexts["OUTPUT_JSON_EXAMPLE"] = json.dumps(json_example, indent=2, ensure_ascii=False)
+
+            def _default(o):
+                if isinstance(o, BaseModel):
+                    return o.model_dump()
+                if isinstance(o, Enum):
+                    return o.value
+                return repr(o)
+
+            contexts["OUTPUT_JSON_SCHEMA"] = json.dumps(json_schema, indent=2, ensure_ascii=False, default=_default)
+            contexts["OUTPUT_JSON_EXAMPLE"] = json.dumps(json_example, indent=2, ensure_ascii=False, default=_default)
         contexts.update(kwargs)
         return contexts
 
@@ -220,30 +231,41 @@ class BaseChatAgent(BotChat, BaseAgent):
 
     def combine_json_replies(self, replies):
         json_replies = [reply for reply in replies if reply["type"] == "code" and reply["lang"] == "json"]
-        if self.COMBINE_REPLY == AgentCombineReply.FIRST:
-            json_obj = json.loads(json_replies[0]["content"])
-            if self.OUTPUT_JSON_SCHEMA:
-                json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
-            return json_obj
-        elif self.COMBINE_REPLY == AgentCombineReply.LAST:
-            json_obj = json.loads(json_replies[-1]["content"])
-            if self.OUTPUT_JSON_SCHEMA:
-                json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
-            return json_obj
-        elif self.COMBINE_REPLY == AgentCombineReply.LIST:
-            json_objs = [json.loads(reply["content"]) for reply in json_replies]
-            if self.OUTPUT_JSON_SCHEMA:
-                json_objs = [self.OUTPUT_JSON_SCHEMA(**json_obj) for json_obj in json_objs]
-            return json_objs
-        elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
-            json_obj = {}
-            for json_reply in json_replies:
-                json_obj.update(json.loads(json_reply["content"]))
-            if self.OUTPUT_JSON_SCHEMA:
-                json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
-            return json_obj
-        else:
-            raise ValueError("Unsupported combine_reply: {} for json output".format(self.COMBINE_REPLY))
+        assert self.COMBINE_REPLY in [
+            AgentCombineReply.FIRST,
+            AgentCombineReply.LAST,
+            AgentCombineReply.LIST,
+            AgentCombineReply.MERGE,
+        ]
+        try:
+            if self.COMBINE_REPLY == AgentCombineReply.FIRST:
+                json_obj = json.loads(json_replies[0]["content"])
+                if self.OUTPUT_JSON_SCHEMA:
+                    json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
+                return json_obj
+            elif self.COMBINE_REPLY == AgentCombineReply.LAST:
+                json_obj = json.loads(json_replies[-1]["content"])
+                if self.OUTPUT_JSON_SCHEMA:
+                    json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
+                return json_obj
+            elif self.COMBINE_REPLY == AgentCombineReply.LIST:
+                json_objs = [json.loads(reply["content"]) for reply in json_replies]
+                if self.OUTPUT_JSON_SCHEMA:
+                    json_objs = [self.OUTPUT_JSON_SCHEMA(**json_obj) for json_obj in json_objs]
+                return json_objs
+            elif self.COMBINE_REPLY == AgentCombineReply.MERGE:
+                json_obj = {}
+                for json_reply in json_replies:
+                    json_obj.update(json.loads(json_reply["content"]))
+                if self.OUTPUT_JSON_SCHEMA:
+                    json_obj = self.OUTPUT_JSON_SCHEMA(**json_obj)
+                return json_obj
+            else:
+                return False
+        except Exception as e:
+            _T(f"提取JSON失败: {type(e).__name__}: {e}")
+            _W(traceback.format_exc())
+            return False
 
     def combine_text_replies(self, replies):
         text_replies = [reply for reply in replies if reply["type"] == "text"]
@@ -274,10 +296,22 @@ class BaseChatAgent(BotChat, BaseAgent):
     def __call__(self, **kwargs) -> Tuple[bool, Any]:
         contexts = self.prepare_contexts(**kwargs)
         messages = self.create_messages(contexts)
-        replies = self.chat(messages.get(), display_reply=self.DISPLAY_REPLY)
-        reply = self.combine_replies(replies)
-        if not self.ACCEPT_EMPYT_REPLY and not reply:
-            raise ValueError("Reply is empty")
+        reply_retries = 0
+        while reply_retries <= self.REPLY_ERROR_RETRIES:
+            replies = self.chat(messages.get(), display_reply=self.DISPLAY_REPLY)
+            reply = self.combine_replies(replies)
+            if reply is False:
+                reply_retries += 1
+                if reply_retries > self.REPLY_ERROR_RETRIES:
+                    raise ValueError("Failed to get reply")
+                _W("Failed to get reply, retrying...")
+            elif not self.ACCEPT_EMPYT_REPLY and not reply:
+                reply_retries += 1
+                if reply_retries > self.REPLY_ERROR_RETRIES:
+                    raise ValueError("Reply is empty")
+                _W("Reply is empty, retrying...")
+            else:
+                break
         result = self.on_reply(reply)
         flush_output()
         if not isinstance(result, tuple):

@@ -19,7 +19,7 @@ from .bot_contexts import NotebookContext, AgentCellContext
 from .bot_agents import AgentFactory
 from .bot_agents.base import AgentModelType
 from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV1, TaskExecutorFlowV2, TaskExecutorFlowV3
-from .bot_outputs import _D, _I, _W, _E, _F, _M, _B, _O, reset_output, set_logging_level
+from .bot_outputs import _D, _I, _W, _E, _F, _M, _B, _O, reset_output, set_logging_level, flush_output
 
 
 @magics_class
@@ -44,6 +44,7 @@ class BotMagics(Magics, Configurable):
     display_think = Bool(True, help="Display chatthink response").tag(config=True)
     display_response = Bool(False, help="Display chat full response").tag(config=True)
     support_save_meta = Bool(False, help="Support save metadata to cell").tag(config=True)
+    enable_evaluating = Bool(False, help="Enable evaluating task").tag(config=True)
     notebook_path = Unicode(None, allow_none=True, help="Path to Notebook file").tag(config=True)
     default_task_flow = Unicode("v3", allow_none=True, help="Default task flow").tag(config=True)
     default_max_tries = Int(3, help="Default max tries for task execution").tag(config=True)
@@ -155,14 +156,14 @@ class BotMagics(Magics, Configurable):
                 self.reasoning_model_name,
             )
             if options.planning:
-                flow = MasterPlannerFlow(nb_context, agent_factory)
+                flow = MasterPlannerFlow(nb_context, agent_factory, self.enable_evaluating)
             else:
                 if options.flow == "v1":
-                    flow = TaskExecutorFlowV1(nb_context, agent_factory)
+                    flow = TaskExecutorFlowV1(nb_context, agent_factory, self.enable_evaluating)
                 elif options.flow == "v2":
-                    flow = TaskExecutorFlowV2(nb_context, agent_factory)
+                    flow = TaskExecutorFlowV2(nb_context, agent_factory, self.enable_evaluating)
                 elif options.flow == "v3":
-                    flow = TaskExecutorFlowV3(nb_context, agent_factory)
+                    flow = TaskExecutorFlowV3(nb_context, agent_factory, self.enable_evaluating)
                 else:
                     raise ValueError(f"Unknown flow: {options.flow}")
             flow(
@@ -173,6 +174,8 @@ class BotMagics(Magics, Configurable):
             )
         except Exception as e:
             traceback.print_exc()
+        finally:
+            flush_output()
 
 
 def load_ipython_extension(ipython):

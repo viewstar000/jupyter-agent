@@ -8,6 +8,7 @@ https://opensource.org/licenses/MIT
 from IPython.display import Markdown
 from .base import BaseChatAgent, AgentModelType
 from ..bot_outputs import _C, ReplyType
+from ..bot_evaluators.dummy_task import DummyTaskEvaluator
 
 MASTER_PLANNER_PROMPT = """\
 **角色定义**：
@@ -40,6 +41,7 @@ class MasterPlannerAgent(BaseChatAgent):
     PROMPT = MASTER_PLANNER_PROMPT
     DISPLAY_REPLY = False
     MODEL_TYPE = AgentModelType.PLANNER
+    EVALUATORS = {None: DummyTaskEvaluator}
 
     def on_reply(self, reply):
         _C(Markdown(reply), reply_type=ReplyType.TASK_RESULT)

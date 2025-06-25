@@ -13,6 +13,8 @@ from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
+from ..bot_evaluators.flow_task_executor import FlowTaskExecEvaluator
+from ..bot_evaluators.dummy_global import DummyGlobalEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
 from ..bot_outputs import set_stage, flush_output, output_evaluation
 from ..bot_outputs import FlowEvalutionRecord, StageEvalutionRecord, NotebookEvalutionRecord
@@ -52,10 +54,13 @@ class BaseTaskFlow:
     STAGE_TRANSITIONS: List[StageTransition] = []
     START_STAGE = TASK_STAGE_START
     STOP_STAGES = [TASK_STAGE_COMPLETED, TASK_STAGE_GLOBAL_FINISHED]
+    FLOW_EVALUATOR = FlowTaskExecEvaluator
+    GLOBAL_EVALUATOR = DummyGlobalEvaluator
 
-    def __init__(self, notebook_context, agent_factory):
+    def __init__(self, notebook_context, agent_factory, evaluating=False):
         self.notebook_context = notebook_context
         self.agent_factory = agent_factory
+        self.evaluating = evaluating
         self.stage_transitions = {}
         self.prepare_stage_transitions()
 
@@ -175,15 +180,37 @@ class BaseTaskFlow:
             stage_duration = time.time() - stage_st
             flow_duration += stage_duration
             _M(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
-            output_evaluation(
-                StageEvalutionRecord(
-                    cell_index=self.task.cell_idx,
-                    flow=type(self).__name__,
-                    stage=str(stage),
-                    execution_duration=stage_duration,
-                    is_success=not failed,
+            if self.evaluating and not failed and hasattr(agent, "EVALUATORS") and state in agent.EVALUATORS:
+                # If the agent has evaluators, run them
+                evaluator = self.agent_factory(agent.EVALUATORS[state])
+                try:
+                    _M(f"**Evaluating** stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
+                    evaluation_result = evaluator()
+                    evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                    evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                    evaluation_result.cell_index = self.task.cell_idx
+                    evaluation_result.flow = type(self).__name__
+                    evaluation_result.stage = str(stage)
+                    evaluation_result.agent = type(agent).__name__
+                    evaluation_result.execution_duration = stage_duration
+                    evaluation_result.is_success = not failed
+                    output_evaluation(evaluation_result)
+                except Exception as e:
+                    _M(f"**Error** during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
+                    _M(f"```python\n{traceback.format_exc()}\n```")
+            else:
+                output_evaluation(
+                    StageEvalutionRecord(
+                        timestamp=time.time(),
+                        evaluator="default",
+                        cell_index=self.task.cell_idx,
+                        flow=type(self).__name__,
+                        stage=str(stage),
+                        agent=type(agent).__name__,
+                        execution_duration=stage_duration,
+                        is_success=not failed,
+                    )
                 )
-            )
 
             if state != TASK_AGENT_STATE_ERROR:
                 # Agent did not fail, check if we have reached the final stage
@@ -232,17 +259,50 @@ class BaseTaskFlow:
         stage_name = stage.value if isinstance(stage, Enum) else stage
         if stage_name == TASK_STAGE_GLOBAL_FINISHED:
             _M("Task execution **finished** globally.")
-            output_evaluation(NotebookEvalutionRecord(cell_index=self.task.cell_idx, is_success=True))
+            if self.evaluating and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
+                evaluator = self.agent_factory(self.GLOBAL_EVALUATOR)
+                _M(f"**Evaluating** notebook with evaluator `{type(evaluator).__name__}` ...")
+                evaluation_result = evaluator()
+                evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                evaluation_result.cell_index = self.task.cell_idx
+                evaluation_result.is_success = True
+                output_evaluation(evaluation_result)
+            else:
+                output_evaluation(
+                    NotebookEvalutionRecord(
+                        timestamp=time.time(),
+                        evaluator="default",
+                        cell_index=self.task.cell_idx,
+                        is_success=True,
+                    )
+                )
         elif stage_name == TASK_STAGE_COMPLETED:
             _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
-            output_evaluation(
-                FlowEvalutionRecord(
-                    cell_index=self.task.cell_idx,
-                    flow=type(self).__name__,
-                    stage_count=stage_count,
-                    execution_duration=flow_duration,
-                    is_success=True,
+            if self.evaluating and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
+                evaluator = self.agent_factory(self.FLOW_EVALUATOR)
+                _M(f"**Evaluating** flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
+                evaluation_result = evaluator()
+                evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                evaluation_result.cell_index = self.task.cell_idx
+                evaluation_result.flow = type(self).__name__
+                evaluation_result.stage_count = stage_count
+                evaluation_result.execution_duration = flow_duration
+                evaluation_result.is_success = True
+                output_evaluation(evaluation_result)
+            else:
+                # If no evaluator, just output the evaluation record
+                output_evaluation(
+                    FlowEvalutionRecord(
+                        timestamp=time.time(),
+                        evaluator="default",
+                        cell_index=self.task.cell_idx,
+                        flow=type(self).__name__,
+                        stage_count=stage_count,
+                        execution_duration=flow_duration,
+                        is_success=True,
+                    )
                 )
-            )
         flush_output()
         return stage

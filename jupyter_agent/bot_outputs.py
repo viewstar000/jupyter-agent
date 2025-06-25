@@ -176,6 +176,7 @@ LOGGING_LEVELS = {
 class BaseEvalutionRecord(BaseModel):
     timestamp: float = 0
     notebook_name: str = ""
+    evaluator: str = ""
     eval_type: str = "BASE"
     cell_index: int = -1
     execution_duration: float = 0.0
@@ -187,9 +188,7 @@ class StageEvalutionRecord(BaseEvalutionRecord):
     eval_type: str = "STAGE"
     flow: str = ""
     stage: str = ""
-    coding_score: float = 0.0
-    important_score: float = 0.0
-    user_supply_score: float = 0.0
+    agent: str = ""
 
 
 class FlowEvalutionRecord(BaseEvalutionRecord):
@@ -197,12 +196,19 @@ class FlowEvalutionRecord(BaseEvalutionRecord):
     flow: str = ""
     stage_count: int = 0
     planning_score: float = 0.0
+    reasoning_score: float = 0.0
+    coding_score: float = 0.0
+    important_score: float = 0.0
+    user_supply_score: float = 0.0
 
 
 class NotebookEvalutionRecord(BaseEvalutionRecord):
     eval_type: str = "NOTEBOOK"
     flow_count: int = 0
     planning_score: float = 0.0
+    coding_score: float = 0.0
+    important_score: float = 0.0
+    user_supply_score: float = 0.0
 
 
 class AgentOutput:
@@ -221,6 +227,7 @@ class AgentOutput:
         )
         self.template = self.jinja_env.from_string(AGENT_OUTPUT_TEMPLEATE)
         self.handler = None
+        self._is_dirty = True
         self._latest_display_tm = 0
         self._contents = {}
         self._active_stage = None
@@ -266,8 +273,11 @@ class AgentOutput:
         return metadata
 
     def display(self, stage=None, force=False, wait=True):
-        if stage is not None:
+        if stage is not None and stage != self._active_stage:
             self._active_stage = stage
+            self._is_dirty = True
+        if not self._is_dirty and not force:
+            return
         if not force and time.time() - self._latest_display_tm < 1:
             if wait:
                 time.sleep(1 - (time.time() - self._latest_display_tm))
@@ -278,6 +288,7 @@ class AgentOutput:
         else:
             self.handler.update(Markdown(self.content), metadata=self.metadata)
         self._latest_display_tm = time.time()
+        self._is_dirty = False
 
     def clear(self, stage=None, clear_metadata=False):
         if stage is None:
@@ -286,6 +297,7 @@ class AgentOutput:
             self._contents[stage] = []
         if clear_metadata:
             self._agent_data = {}
+        self._is_dirty = True
         self.display(force=False, wait=False)
 
     def output_block(
@@ -305,6 +317,7 @@ class AgentOutput:
                 "code_language": code_language,
             }
         )
+        self._is_dirty = True
         self.display(stage, force=False, wait=False)
 
     def output_text(self, content, stage=None, code_language="python"):
@@ -320,6 +333,7 @@ class AgentOutput:
             self._contents[stage][-1]["content"] += "\n" + content
         else:
             self._contents[stage].append({"type": "text", "content": content, "code_language": code_language})
+        self._is_dirty = True
         self.display(stage, force=False, wait=False)
 
     def output_markdown(self, content, stage=None):
@@ -328,12 +342,14 @@ class AgentOutput:
         if stage not in self._contents:
             self._contents[stage] = []
         self._contents[stage].append({"type": "markdown", "content": content})
+        self._is_dirty = True
         self.display(stage, force=False, wait=False)
 
     def output_agent_data(self, **kwargs):
         self.log(f"output agent data {kwargs}", level="DEBUG")
         self._agent_data.update(kwargs)
         self._agent_data_timestamp = int(time.time() * 1000)
+        self._is_dirty = True
         self.display(force=False, wait=False)
 
     def log(self, msg, level="INFO"):
@@ -355,6 +371,7 @@ class AgentOutput:
                     "content": content,
                 }
             )
+        self._is_dirty = True
         self.display(force=False, wait=False)
 
     def log_evaluation(self, record: BaseEvalutionRecord):
@@ -369,6 +386,7 @@ class AgentOutput:
             f"success: {record.is_success} correct: {record.correct_score:.2f}",
             level="INFO",
         )
+        self._is_dirty = True
         self.display(force=False, wait=False)
 
 
@@ -534,6 +552,6 @@ _A = output_agent_data
 _L = log
 _D = lambda msg: log(msg, level="DEBUG")
 _I = lambda msg: log(msg, level="INFO")
-_W = lambda msg: log(msg, level="WARNING")
+_W = lambda msg: log(msg, level="WARN")
 _E = lambda msg: log(msg, level="ERROR")
 _F = lambda msg: log(msg, level="FATAL")
