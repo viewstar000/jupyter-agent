@@ -1,3 +1,4 @@
+bottle
 ipynbname
 ipython
 jinja2
