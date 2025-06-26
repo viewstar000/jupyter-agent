@@ -170,7 +170,6 @@ class ActionDispatcher(threading.Thread):
         self.close()
 
     def __enter__(self):
-        self.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -198,26 +197,26 @@ class ActionDispatcher(threading.Thread):
         return self.action_replies.get(action.uuid) and self.action_replies[action.uuid].reply
 
 
-__default_action_dispatcher = None
+_default_action_dispatcher = None
 
 
 def get_action_dispatcher() -> ActionDispatcher:
-    global __default_action_dispatcher
+    global _default_action_dispatcher
 
-    if not __default_action_dispatcher:
-        __default_action_dispatcher = ActionDispatcher()
-    elif not __default_action_dispatcher.is_alive():
-        __default_action_dispatcher.close()
-        __default_action_dispatcher = ActionDispatcher()
-    return __default_action_dispatcher
+    if not _default_action_dispatcher:
+        _default_action_dispatcher = ActionDispatcher()
+    elif not _default_action_dispatcher.is_alive():
+        _default_action_dispatcher.close()
+        _default_action_dispatcher = ActionDispatcher()
+    return _default_action_dispatcher
 
 
 def close_action_dispatcher():
-    global __default_action_dispatcher
+    global _default_action_dispatcher
 
-    if __default_action_dispatcher:
-        __default_action_dispatcher.close()
-        __default_action_dispatcher = None
+    if _default_action_dispatcher:
+        _default_action_dispatcher.close()
+        _default_action_dispatcher = None
 
 
 @get("/echo")

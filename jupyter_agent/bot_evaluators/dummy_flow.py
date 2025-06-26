@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_evaluation import FlowEvalutionRecord
+from ..bot_evaluation import FlowEvaluationRecord
 
 
 class DummyFlowEvaluator(BaseEvaluator):
@@ -17,4 +17,4 @@ class DummyFlowEvaluator(BaseEvaluator):
         """
         Dummy evaluator that does nothing and returns a dummy response.
         """
-        return FlowEvalutionRecord(timestamp=time.time(), evaluator="dummy")
+        return FlowEvaluationRecord(timestamp=time.time(), evaluator="dummy")

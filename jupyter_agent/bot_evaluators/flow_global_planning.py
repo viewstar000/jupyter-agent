@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _A, _O, _C, _M, _B
-from ..bot_evaluation import FlowEvalutionRecord
+from ..bot_evaluation import FlowEvaluationRecord
 
 
 FLOW_GLOBAL_PLANNING_EVAL_PROMPT = """\
@@ -81,7 +81,7 @@ class FlowGlobalPlanningEvaluator(BaseEvaluator):
 
     def on_reply(self, reply):
         reply = super().on_reply(reply)
-        return FlowEvalutionRecord(
+        return FlowEvaluationRecord(
             timestamp=time.time(),
             evaluator="flow_global_planning",
             correct_score=reply.properties.quality_score,

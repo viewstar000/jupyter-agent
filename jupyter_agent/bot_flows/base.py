@@ -13,11 +13,11 @@ from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
-from ..bot_evaluators import FlowTaskExecEvaluator
 from ..bot_evaluators.dummy_global import DummyGlobalEvaluator
+from ..bot_evaluators.flow_task_executor import FlowTaskExecEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
 from ..bot_outputs import set_stage, flush_output, output_evaluation
-from ..bot_evaluation import FlowEvalutionRecord, StageEvalutionRecord, NotebookEvalutionRecord
+from ..bot_evaluation import FlowEvaluationRecord, StageEvaluationRecord, NotebookEvaluationRecord
 
 TASK_AGENT_STATE_ERROR = "_AGENT_STATE_ERROR_32534526_"
 TASK_STAGE_START = "start"
@@ -205,7 +205,7 @@ class BaseTaskFlow:
                     _M(f"```python\n{traceback.format_exc()}\n```")
             else:
                 output_evaluation(
-                    StageEvalutionRecord(
+                    StageEvaluationRecord(
                         timestamp=time.time(),
                         evaluator="default",
                         cell_index=self.task.cell_idx,
@@ -275,7 +275,7 @@ class BaseTaskFlow:
                 output_evaluation(evaluation_result)
             else:
                 output_evaluation(
-                    NotebookEvalutionRecord(
+                    NotebookEvaluationRecord(
                         timestamp=time.time(),
                         evaluator="default",
                         cell_index=self.task.cell_idx,
@@ -299,7 +299,7 @@ class BaseTaskFlow:
             else:
                 # If no evaluator, just output the evaluation record
                 output_evaluation(
-                    FlowEvalutionRecord(
+                    FlowEvaluationRecord(
                         timestamp=time.time(),
                         evaluator="default",
                         cell_index=self.task.cell_idx,

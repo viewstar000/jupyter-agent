@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Optional, Dict, List, Tuple, Any, Type
 from pydantic import BaseModel, Field
 from IPython.display import display, Markdown
-from .bot_evaluation import BaseEvalutionRecord
+from .bot_evaluation import BaseEvaluationRecord
 from .bot_actions import ActionBase
 from .utils import no_indent, no_wrap
 
@@ -341,9 +341,9 @@ class AgentOutput:
         self._is_dirty = True
         self.display(force=False, wait=False)
 
-    def log_evaluation(self, record: BaseEvalutionRecord):
+    def log_evaluation(self, record: BaseEvaluationRecord):
         assert isinstance(
-            record, BaseEvalutionRecord
+            record, BaseEvaluationRecord
         ), "record must be an instance of BaseEvalutionRecord or its subclass"
         if record.timestamp == 0:
             record.timestamp = time.time()
@@ -408,7 +408,7 @@ def output_agent_data(**kwargs):
     get_output().output_agent_data(**kwargs)
 
 
-def output_evaluation(record: BaseEvalutionRecord):
+def output_evaluation(record: BaseEvaluationRecord):
     get_output().log_evaluation(record)
 
 

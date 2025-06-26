@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_evaluation import StageEvalutionRecord
+from ..bot_evaluation import StageEvaluationRecord
 
 
 class DummyTaskEvaluator(BaseEvaluator):
@@ -17,4 +17,4 @@ class DummyTaskEvaluator(BaseEvaluator):
         """
         Dummy evaluator that does nothing and returns a dummy response.
         """
-        return StageEvalutionRecord(timestamp=time.time(), evaluator="dummy")
+        return StageEvaluationRecord(timestamp=time.time(), evaluator="dummy")

@@ -19,7 +19,7 @@ from nbclient.client import NotebookClient
 from .bot_actions import ActionBase, ActionSetNextCell, SetNextCellParams, get_action_class
 
 
-class BaseEvalutionRecord(BaseModel):
+class BaseEvaluationRecord(BaseModel):
     timestamp: float = 0
     notebook_name: str = ""
     evaluator: str = ""
@@ -30,14 +30,14 @@ class BaseEvalutionRecord(BaseModel):
     correct_score: float = 0.0
 
 
-class StageEvalutionRecord(BaseEvalutionRecord):
+class StageEvaluationRecord(BaseEvaluationRecord):
     eval_type: str = "STAGE"
     flow: str = ""
     stage: str = ""
     agent: str = ""
 
 
-class FlowEvalutionRecord(BaseEvalutionRecord):
+class FlowEvaluationRecord(BaseEvaluationRecord):
     eval_type: str = "FLOW"
     flow: str = ""
     stage_count: int = 0
@@ -48,7 +48,7 @@ class FlowEvalutionRecord(BaseEvalutionRecord):
     user_supply_score: float = 0.0
 
 
-class NotebookEvalutionRecord(BaseEvalutionRecord):
+class NotebookEvaluationRecord(BaseEvaluationRecord):
     eval_type: str = "NOTEBOOK"
     flow_count: int = 0
     planning_score: float = 0.0
@@ -100,11 +100,11 @@ class NotebookRunner:
             **kwargs,
         )
 
-    def save_evaluation_record(self, record: BaseEvalutionRecord):
+    def save_evaluation_record(self, record: BaseEvaluationRecord):
 
-        if isinstance(record, FlowEvalutionRecord):
+        if isinstance(record, FlowEvaluationRecord):
             eval_source = record.flow + "-" + record.evaluator
-        elif isinstance(record, StageEvalutionRecord):
+        elif isinstance(record, StageEvaluationRecord):
             eval_source = record.flow + "-" + record.stage + "-" + record.agent + "-" + record.evaluator
         else:
             eval_source = record.evaluator
@@ -146,14 +146,14 @@ class NotebookRunner:
                     output_meta["jupyter-agent-data"]
                 )
 
-    def handle_evalution_record(self, cell_index, cell_output_metas):
+    def handle_evaluation_record(self, cell_index, cell_output_metas):
         is_bot_cell = False
         is_flow_completed = False
         for output_meta in cell_output_metas:
             for record in output_meta.get("jupyter-agent-evaluation-records", []):
                 is_bot_cell = True
                 if record["eval_type"] == "NOTEBOOK":
-                    record = NotebookEvalutionRecord(**record)
+                    record = NotebookEvaluationRecord(**record)
                     record.timestamp = record.timestamp or time.time()
                     record.notebook_name = str(self.output_path)
                     record.execution_duration = time.time() - self.start_time
@@ -161,22 +161,22 @@ class NotebookRunner:
                     is_flow_completed = True
                     del self.notebook.cells[cell_index + 1 :]  # Remove all cells after the notebook cell
                 elif record["eval_type"] == "FLOW":
-                    record = FlowEvalutionRecord(**record)
+                    record = FlowEvaluationRecord(**record)
                     record.timestamp = record.timestamp or time.time()
                     record.notebook_name = str(self.output_path)
                     is_flow_completed = True
                 elif record["eval_type"] == "STAGE":
-                    record = StageEvalutionRecord(**record)
+                    record = StageEvaluationRecord(**record)
                     record.timestamp = record.timestamp or time.time()
                     record.notebook_name = str(self.output_path)
                 else:
-                    record = BaseEvalutionRecord(**record)
+                    record = BaseEvaluationRecord(**record)
                     record.timestamp = record.timestamp or time.time()
                     record.notebook_name = str(self.output_path)
                 self.save_evaluation_record(record)
         if is_bot_cell and not is_flow_completed:
             self.save_evaluation_record(
-                FlowEvalutionRecord(
+                FlowEvaluationRecord(
                     timestamp=time.time(),
                     notebook_name=str(self.output_path),
                     evaluator="bot",
@@ -192,6 +192,7 @@ class NotebookRunner:
             self.notebook.cells[cell_index].metadata.update(action.params.metadata)
             self.notebook.cells[cell_index].metadata["tags"] = action.params.tags
             print(f"CELL[{cell_index}] Replacing cell with set_next_cell action")
+            return cell_index
         else:
             metadata = dict(action.params.metadata)
             metadata["tags"] = action.params.tags
@@ -205,7 +206,7 @@ class NotebookRunner:
             ret_idx = cell_index + 1 if action.params.index == -1 else cell_index
             self.notebook.cells.insert(insert_idx, new_cell)
             print(f"CELL[{cell_index}] Inserting  cell at [{insert_idx}] with set_next_cell action")
-        return ret_idx
+            return ret_idx
 
     def handle_jupyter_agent_actions(self, cell_index, cell_meta, cell_output_metas):
         cell_action_timestamp = cell_meta.get("jupyter-agent-action-timestamp", 0)
@@ -233,7 +234,7 @@ class NotebookRunner:
         ]
         self.handle_cell_payloads(cell_index, cell_payloads)
         self.handle_jupyter_agent_data(cell_index, cell_meta, cell_output_metas)
-        self.handle_evalution_record(cell_index, cell_output_metas)
+        self.handle_evaluation_record(cell_index, cell_output_metas)
         self.handle_jupyter_agent_actions(cell_index, cell_meta, cell_output_metas)
         print(f"CELL[{cell_index}] Saving executed {cell_type} cell - {cell_id}")
         nbformat.write(self.notebook, self.output_path)
@@ -261,7 +262,7 @@ class NotebookRunner:
         if not self.is_global_finished:
             print("Notebook execution did not finish globally, appending evaluation records.")
             self.save_evaluation_record(
-                NotebookEvalutionRecord(
+                NotebookEvaluationRecord(
                     notebook_name=str(self.output_path),
                     timestamp=time.time(),
                     evaluator="bot",

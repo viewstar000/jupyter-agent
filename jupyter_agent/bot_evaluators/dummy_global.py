@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_evaluation import NotebookEvalutionRecord
+from ..bot_evaluation import NotebookEvaluationRecord
 
 
 class DummyGlobalEvaluator(BaseEvaluator):
@@ -17,4 +17,4 @@ class DummyGlobalEvaluator(BaseEvaluator):
         """
         Dummy evaluator that does nothing and returns a dummy response.
         """
-        return NotebookEvalutionRecord(timestamp=time.time(), evaluator="dummy")
+        return NotebookEvaluationRecord(timestamp=time.time(), evaluator="dummy")

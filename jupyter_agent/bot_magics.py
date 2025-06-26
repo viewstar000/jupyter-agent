@@ -16,10 +16,9 @@ from IPython.core.magic import Magics, magics_class, cell_magic
 from traitlets import Unicode, Int, Bool
 from traitlets.config.configurable import Configurable
 from .bot_contexts import NotebookContext
-from .bot_agents import AgentFactory
-from .bot_agents.base import AgentModelType
+from .bot_agents.base import AgentModelType, AgentFactory
 from .bot_agents.request_user_supply import RequestUserSupplyAgent
-from .bot_evaluators import EvaluatorFactory
+from .bot_evaluators.base import EvaluatorFactory
 from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV3
 from .bot_outputs import _D, _I, _W, _E, _F, _M, _B, _O, reset_output, set_logging_level, flush_output
 from .bot_actions import close_action_dispatcher
