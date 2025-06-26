@@ -109,10 +109,9 @@ class TaskVerifySummaryAgent(BaseChatAgent):
     def on_reply(self, reply: TaskSummaryOutput):
 
         if reply.state == TaskSummaryState.SUCCESS:
-            _O(Markdown("### 任务总结"))
             assert reply.summary, "Summary is empty"
-            _C(Markdown(reply.summary), reply_type=ReplyType.TASK_RESULT)
-            self.task.set_data("result", reply.summary)
+            _M("### 任务总结\n\n" + reply.summary)
+            self.task.agent_data.result = reply.summary
             return False, reply.state
         else:
             _M("### 任务验证不通过！\n")
@@ -124,9 +123,9 @@ class TaskVerifySummaryAgent(BaseChatAgent):
             if reply.enhancement.issues:
                 for issue in reply.enhancement.issues:
                     task_issue += "- {}\n".format(issue)
-            self.task.set_data("issue", task_issue)
-            self.task.set_data("coding_prompt", reply.enhancement.code_prompt)
-            self.task.set_data("summary_prompt", reply.enhancement.summary_prompt)
+            self.task.agent_data.issue = task_issue
+            self.task.agent_data.coding_prompt = reply.enhancement.code_prompt
+            self.task.agent_data.summary_prompt = reply.enhancement.summary_prompt
             _M(task_issue)
             _M("### 修改后的子任务信息\n")
             _M(f"### 当前子任务代码需求：\n\n{reply.enhancement.code_prompt}")

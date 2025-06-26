@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _A, _O, _C, _M, _B
-from ..bot_outputs import FlowEvalutionRecord
+from ..bot_evaluation import FlowEvalutionRecord
 
 
 FLOW_TASK_EXEC_EVAL_PROMPT = """\

@@ -17,13 +17,12 @@ class OutputTaskResult(BaseAgent):
     def __call__(self):
         """执行代码逻辑"""
         if self.task.result:
-            _O(Markdown("### 任务结果\n\n"))
-            _C(Markdown(self.task.result), reply_type=ReplyType.TASK_RESULT)
+            _M("### 任务结果\n\n" + self.task.result)
         if self.task.important_infos:
-            _O(
-                markdown_block(
-                    f"```json\n{json.dumps(self.task.important_infos, indent=4, ensure_ascii=False)}\n```",
-                    title="重要信息",
-                )
+            _B(
+                json.dumps(self.task.important_infos, indent=4, ensure_ascii=False),
+                title="重要信息",
+                format="code",
+                code_language="json",
             )
         return False, None

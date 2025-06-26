@@ -71,6 +71,6 @@ class TaskSummaryAgent(BaseChatAgent):
     DISPLAY_REPLY = False
 
     def on_reply(self, reply: str):
-        _C(Markdown("### 任务总结\n" + reply), reply_type=ReplyType.TASK_RESULT)
         assert reply, "Reply is empty"
-        self.task.set_data("result", reply)
+        _M("### 任务总结\n" + reply)
+        self.task.agent_data.result = reply

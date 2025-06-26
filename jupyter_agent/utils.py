@@ -91,37 +91,6 @@ class TeeOutputCapture(capture_output):
         return CapturedIO(stdout, stderr, outputs)
 
 
-class RequestUserPrompt(BaseModel):
-    prompt: str = Field(
-        description="需要用户补充详细信息的Prompt",
-        examples=["请补充与...相关的详细的信息", "请确认...是否...", "请提供..."],
-    )
-    example: Optional[str] = Field(None, description="示例", examples=["..."])
-
-
-class UserPromptResponse(BaseModel):
-    prompt: str = Field(description="需要用户补充详细信息的Prompt", examples=["..."])
-    response: str = Field(description="用户补充的详细信息", examples=["..."])
-
-
-def request_user_response(prompts: list[RequestUserPrompt]) -> list[UserPromptResponse]:
-    responses = []
-    for prompt in prompts:
-        response = input(f"{prompt.prompt} (例如: {prompt.example})")
-        responses.append(UserPromptResponse(prompt=prompt.prompt, response=response))
-    return responses
-
-
-def format_user_prompts(prompts: list[RequestUserPrompt], title="用户补充详细信息") -> str:
-    result = "```markdown\n"
-    result += f"### {title}\n\n"
-    result += "\n".join(
-        [f"- **Issue**: {prompt.prompt} (例如: {prompt.example})\n- **Reply**: " for prompt in prompts]
-    )
-    result += "\n```\n"
-    return result
-
-
 def no_indent(text: str) -> str:
     return re.sub(r"^\s+", "", text, flags=re.MULTILINE)
 
@@ -136,3 +105,23 @@ def no_newline(text: str) -> str:
 
 def no_space(text: str) -> str:
     return re.sub(r"\s+", "", text, flags=re.MULTILINE)
+
+
+class EnvironmentCapbilities(BaseModel):
+    save_metadata: bool = False
+    user_confirm: bool = False
+    user_supply_info: bool = False
+    set_cell_content: bool = False
+
+
+__env_capbilities = EnvironmentCapbilities()
+
+
+def get_env_capbilities() -> EnvironmentCapbilities:
+    return __env_capbilities
+
+
+def set_env_capbilities(env_capbilities: EnvironmentCapbilities):
+    global __env_capbilities
+
+    __env_capbilities = env_capbilities

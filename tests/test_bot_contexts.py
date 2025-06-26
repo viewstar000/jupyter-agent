@@ -111,8 +111,8 @@ def test_agent_cell_context_load_data_from_source_yaml():
     )
     cell = make_code_cell(yaml_block)
     ctx = bc.AgentCellContext(0, cell)
-    assert ctx._agent_data["task_id"] == "testid"
-    assert ctx._agent_data["subject"] == "test subject"
+    assert ctx.agent_data["task_id"] == "testid"
+    assert ctx.agent_data["subject"] == "test subject"
 
 
 def test_agent_cell_context_format_magic_line():
@@ -144,8 +144,8 @@ def test_notebook_context_cells_and_cur_task(tmp_path):
 def test_format_cell_options_basic_fields():
     cell = make_code_cell("%%bot\nprint('hi')")
     ctx = bc.AgentCellContext(0, cell)
-    ctx._agent_data["task_id"] = "tid"
-    ctx._agent_data["subject"] = "subj"
+    ctx.agent_data["task_id"] = "tid"
+    ctx.agent_data["subject"] = "subj"
     options_str = ctx.format_cell_options()
     assert "task_id: tid" in options_str
     assert "subject: subj" in options_str
@@ -158,8 +158,8 @@ def test_format_cell_options_empty_returns_empty_string():
     cell = make_code_cell("%%bot\nprint('hi')")
     ctx = bc.AgentCellContext(0, cell)
     # Clear all fields
-    for k in ctx._agent_data:
-        ctx._agent_data[k] = ""
+    for k in ctx.agent_data:
+        ctx.agent_data[k] = ""
     options_str = ctx.format_cell_options()
     assert options_str == ""
 
@@ -168,7 +168,7 @@ def test_format_cell_options_json_field_serialization():
     cell = make_code_cell("%%bot\nprint('hi')")
     ctx = bc.AgentCellContext(0, cell)
     # important_infos is a JSON field
-    ctx._agent_data["important_infos"] = {"foo": "bar"}
+    ctx.agent_data["important_infos"] = {"foo": "bar"}
     options_str = ctx.format_cell_options()
     assert "important_infos:" in options_str
     assert '"foo": "bar"' in options_str or "foo: bar" in options_str
@@ -177,7 +177,7 @@ def test_format_cell_options_json_field_serialization():
 def test_format_cell_options_handles_list_field():
     cell = make_code_cell("%%bot\nprint('hi')")
     ctx = bc.AgentCellContext(0, cell)
-    ctx._agent_data["important_infos"] = [{"a": 1}, {"b": 2}]
+    ctx.agent_data["important_infos"] = [{"a": 1}, {"b": 2}]
     options_str = ctx.format_cell_options()
     assert "important_infos:" in options_str
     assert '"a": 1' in options_str or '"b": 2' in options_str
@@ -186,9 +186,9 @@ def test_format_cell_options_handles_list_field():
 def test_format_cell_options_skips_none_and_falsey():
     cell = make_code_cell("%%bot\nprint('hi')")
     ctx = bc.AgentCellContext(0, cell)
-    ctx._agent_data["task_id"] = None
-    ctx._agent_data["subject"] = ""
-    ctx._agent_data["coding_prompt"] = False
+    ctx.agent_data["task_id"] = None
+    ctx.agent_data["subject"] = ""
+    ctx.agent_data["coding_prompt"] = False
     options_str = ctx.format_cell_options()
     # None, empty string, and False should not appear
     assert "task_id:" not in options_str

@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_outputs import NotebookEvalutionRecord
+from ..bot_evaluation import NotebookEvalutionRecord
 
 
 class DummyGlobalEvaluator(BaseEvaluator):

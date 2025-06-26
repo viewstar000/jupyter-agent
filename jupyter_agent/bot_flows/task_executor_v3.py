@@ -22,13 +22,19 @@ from ..bot_agents import (
     TaskStructureSummaryAgent,
     TaskStructureReasoningAgent,
     OutputTaskResult,
+    RequestAboveUserSupplyAgent,
+    RequestBelowUserSupplyAgent,
 )
 from ..bot_agents.task_planner_v3 import TaskPlannerState
+from ..bot_agents.task_structrue_reasoner import TaskStructureReasonState
+from ..bot_agents.task_structrue_summarier import TaskStructureSummaryState
 
 
 class TaskStage(str, Enum):
     PLANNING = "planning"
     PLANNING_PAUSED = "planning_paused"
+    REQUEST_INFO_ABOVE = "request_info_above"
+    REQUEST_INFO_BELOW = "request_info_below"
     CODING = "coding"
     EXECUTING = "executing"
     DEBUGGING = "debugging"
@@ -50,9 +56,12 @@ class TaskExecutorFlowV3(BaseTaskFlow):
             states={
                 TaskPlannerState.CODING_PLANNED: TaskStage.CODING,
                 TaskPlannerState.REASONING_PLANNED: TaskStage.REASONING,
-                TaskPlannerState.REQUEST_INFO: TaskStage.PLANNING_PAUSED,
+                TaskPlannerState.REQUEST_INFO: TaskStage.REQUEST_INFO_ABOVE,
                 TaskPlannerState.GLOBAL_FINISHED: TaskStage.GLOBAL_FINISHED,
             },
+        ),
+        StageTransition[TaskStage, None](
+            stage=TaskStage.REQUEST_INFO_ABOVE, agent=RequestAboveUserSupplyAgent, next_stage=TaskStage.PLANNING_PAUSED
         ),
         StageTransition[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING_PAUSED,
@@ -75,16 +84,27 @@ class TaskExecutorFlowV3(BaseTaskFlow):
         StageTransition[TaskStage, None](
             stage=TaskStage.DEBUGGING, agent=CodeDebugerAgent, next_stage=TaskStage.EXECUTING
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.REASONING, agent=TaskStructureReasoningAgent, next_stage=TaskStage.COMPLETED
+        StageTransition[TaskStage, TaskStructureReasonState](
+            stage=TaskStage.REASONING,
+            agent=TaskStructureReasoningAgent,
+            states={
+                TaskStructureReasonState.DONE: TaskStage.COMPLETED,
+                TaskStructureReasonState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
+            },
         ),
-        StageTransition[TaskStage, None](
+        StageTransition[TaskStage, TaskStructureSummaryState](
             stage=TaskStage.SUMMARY,
             agent=TaskStructureSummaryAgent,
-            next_stage={
-                TaskAction.DEFAULT: StageNext(stage=TaskStage.COMPLETED),
-                TaskAction.STOP: StageNext(stage=TaskStage.EXECUTING),
+            states={
+                TaskStructureSummaryState.DONE: {
+                    TaskAction.DEFAULT: StageNext(stage=TaskStage.COMPLETED),
+                    TaskAction.STOP: StageNext(stage=TaskStage.EXECUTING),
+                },
+                TaskStructureSummaryState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
             },
+        ),
+        StageTransition[TaskStage, None](
+            stage=TaskStage.REQUEST_INFO_BELOW, agent=RequestBelowUserSupplyAgent, next_stage=TaskStage.COMPLETED
         ),
         StageTransition[TaskStage, bool](
             stage=TaskStage.COMPLETED,

@@ -13,11 +13,11 @@ from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
-from ..bot_evaluators.flow_task_executor import FlowTaskExecEvaluator
+from ..bot_evaluators import FlowTaskExecEvaluator
 from ..bot_evaluators.dummy_global import DummyGlobalEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
 from ..bot_outputs import set_stage, flush_output, output_evaluation
-from ..bot_outputs import FlowEvalutionRecord, StageEvalutionRecord, NotebookEvalutionRecord
+from ..bot_evaluation import FlowEvalutionRecord, StageEvalutionRecord, NotebookEvalutionRecord
 
 TASK_AGENT_STATE_ERROR = "_AGENT_STATE_ERROR_32534526_"
 TASK_STAGE_START = "start"
@@ -57,10 +57,10 @@ class BaseTaskFlow:
     FLOW_EVALUATOR = FlowTaskExecEvaluator
     GLOBAL_EVALUATOR = DummyGlobalEvaluator
 
-    def __init__(self, notebook_context, agent_factory, evaluating=False):
+    def __init__(self, notebook_context, agent_factory, evaluator_factory=None):
         self.notebook_context = notebook_context
         self.agent_factory = agent_factory
-        self.evaluating = evaluating
+        self.evaluator_factory = evaluator_factory
         self.stage_transitions = {}
         self.prepare_stage_transitions()
 
@@ -180,9 +180,14 @@ class BaseTaskFlow:
             stage_duration = time.time() - stage_st
             flow_duration += stage_duration
             _M(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
-            if self.evaluating and not failed and hasattr(agent, "EVALUATORS") and state in agent.EVALUATORS:
+            if (
+                self.evaluator_factory is not None
+                and not failed
+                and hasattr(agent, "EVALUATORS")
+                and state in agent.EVALUATORS
+            ):
                 # If the agent has evaluators, run them
-                evaluator = self.agent_factory(agent.EVALUATORS[state])
+                evaluator = self.evaluator_factory(agent.EVALUATORS[state])
                 try:
                     _M(f"**Evaluating** stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
                     evaluation_result = evaluator()
@@ -259,8 +264,8 @@ class BaseTaskFlow:
         stage_name = stage.value if isinstance(stage, Enum) else stage
         if stage_name == TASK_STAGE_GLOBAL_FINISHED:
             _M("Task execution **finished** globally.")
-            if self.evaluating and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
-                evaluator = self.agent_factory(self.GLOBAL_EVALUATOR)
+            if self.evaluator_factory is not None and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
+                evaluator = self.evaluator_factory(self.GLOBAL_EVALUATOR)
                 _M(f"**Evaluating** notebook with evaluator `{type(evaluator).__name__}` ...")
                 evaluation_result = evaluator()
                 evaluation_result.timestamp = evaluation_result.timestamp or time.time()
@@ -279,8 +284,8 @@ class BaseTaskFlow:
                 )
         elif stage_name == TASK_STAGE_COMPLETED:
             _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
-            if self.evaluating and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
-                evaluator = self.agent_factory(self.FLOW_EVALUATOR)
+            if self.evaluator_factory is not None and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
+                evaluator = self.evaluator_factory(self.FLOW_EVALUATOR)
                 _M(f"**Evaluating** flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
                 evaluation_result = evaluator()
                 evaluation_result.timestamp = evaluation_result.timestamp or time.time()

@@ -163,13 +163,13 @@ class BaseChatAgent(BotChat, BaseAgent):
     DISPLAY_REPLY = True
     COMBINE_REPLY = AgentCombineReply.MERGE
     ACCEPT_EMPYT_REPLY = False
-    REPLY_ERROR_RETRIES = 2
+    REPLY_ERROR_RETRIES = 1
     MODEL_TYPE = AgentModelType.REASONING
 
-    def __init__(self, notebook_context, base_url, api_key, model_name, **chat_kwargs):
+    def __init__(self, notebook_context, **chat_kwargs):
         """初始化基础任务代理"""
         BaseAgent.__init__(self, notebook_context)
-        BotChat.__init__(self, base_url, api_key, model_name, **chat_kwargs)
+        BotChat.__init__(self, **chat_kwargs)
 
     def prepare_contexts(self, **kwargs):
         contexts = {
@@ -334,25 +334,31 @@ class AgentFactory:
             "model": model_name,
         }
 
-    def __call__(self, agent_class):
-
+    def get_agent_class(self, agent_class):
         if isinstance(agent_class, str):
             bot_agents = importlib.import_module("..bot_agents", __package__)
             agent_class = getattr(bot_agents, agent_class)
+        assert issubclass(agent_class, BaseAgent), "Unsupported agent class: {}".format(agent_class)
+        return agent_class
 
+    def get_chat_kwargs(self, agent_class):
         if issubclass(agent_class, BaseChatAgent):
             agent_model = agent_class.MODEL_TYPE if hasattr(agent_class, "MODEL_TYPE") else AgentModelType.DEFAULT
-            return agent_class(
-                notebook_context=self.notebook_context,
-                base_url=self.models.get(agent_model, {}).get("api_url")
+            chat_kwargs = {
+                "base_url": self.models.get(agent_model, {}).get("api_url")
                 or self.models[AgentModelType.DEFAULT]["api_url"],
-                api_key=self.models.get(agent_model, {}).get("api_key")
+                "api_key": self.models.get(agent_model, {}).get("api_key")
                 or self.models[AgentModelType.DEFAULT]["api_key"],
-                model_name=self.models.get(agent_model, {}).get("model")
+                "model_name": self.models.get(agent_model, {}).get("model")
                 or self.models[AgentModelType.DEFAULT]["model"],
-                **self.chat_kwargs,
-            )
-        elif issubclass(agent_class, BaseAgent):
-            return agent_class(notebook_context=self.notebook_context)
+            }
+            chat_kwargs.update(self.chat_kwargs)
+            return chat_kwargs
         else:
-            raise ValueError("Unsupported agent class: {}".format(agent_class))
+            return {}
+
+    def __call__(self, agent_class):
+
+        agent_class = self.get_agent_class(agent_class)
+        chat_kwargs = self.get_chat_kwargs(agent_class)
+        return agent_class(self.notebook_context, **chat_kwargs)

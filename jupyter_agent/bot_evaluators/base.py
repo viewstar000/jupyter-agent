@@ -5,17 +5,10 @@ This software is released under the MIT License.
 https://opensource.org/licenses/MIT
 """
 
-import json
 import importlib
 
-from typing import Tuple, Any
-from enum import Enum, unique
-from pydantic import BaseModel, Field
-from IPython.display import Markdown
 from ..bot_outputs import _B
-from ..bot_chat import BotChat
-from ..utils import no_indent
-from ..bot_agents.base import BaseChatAgent, AgentOutputFormat, AgentModelType
+from ..bot_agents.base import BaseChatAgent, AgentOutputFormat, AgentModelType, AgentFactory
 
 
 class BaseEvaluator(BaseChatAgent):
@@ -37,3 +30,13 @@ class BaseEvaluator(BaseChatAgent):
         if result is not None:
             return result[-1]
         raise NotImplementedError("BaseChatAgent does not implement __call__ method.")
+
+
+class EvaluatorFactory(AgentFactory):
+
+    def get_agent_class(self, agent_class):
+        if isinstance(agent_class, str):
+            bot_agents = importlib.import_module("..bot_evaluators", __package__)
+            agent_class = getattr(bot_agents, agent_class)
+        assert issubclass(agent_class, BaseEvaluator), "Unsupported agent class: {}".format(agent_class)
+        return agent_class

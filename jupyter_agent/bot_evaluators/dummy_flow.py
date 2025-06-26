@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_outputs import FlowEvalutionRecord
+from ..bot_evaluation import FlowEvalutionRecord
 
 
 class DummyFlowEvaluator(BaseEvaluator):

@@ -94,6 +94,6 @@ class TaskVerifyAgent(BaseChatAgent):
             if reply.issues:
                 for issue in reply.issues:
                     task_issue += "- {}\n".format(issue)
-            self.task.set_data("issue", task_issue)
+            self.task.agent_data.issue = task_issue
             _M(task_issue)
             return True, reply.state

@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat
 from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _M, _B, _C, _O, markdown_block
-from ..utils import RequestUserPrompt, format_user_prompts
+from ..bot_actions import RequestUserSupplyInfo
+
 
 TASK_REASONER_PROMPT = """\
 **角色定义**：
@@ -58,6 +59,11 @@ TASK_REASONER_PROMPT = """\
 """
 
 
+class TaskStructureReasonState(str, Enum):
+    DONE = "done"
+    REQUEST_INFO = "request_info"
+
+
 class TaskStructureReasonOutput(BaseModel):
 
     summary: str = Field(description=f"任务总结的详细描述", examples=["..."])
@@ -77,7 +83,7 @@ class TaskStructureReasonOutput(BaseModel):
             }
         ],
     )
-    request_confirm_infos: Optional[List[RequestUserPrompt]] = Field(
+    request_confirm_infos: Optional[List[RequestUserSupplyInfo]] = Field(
         None, description="需要用户补充确认的信息，问题应尽量简单，只需要用户回答是/否或在备选项中选择即可"
     )
 
@@ -91,16 +97,17 @@ class TaskStructureReasoningAgent(BaseChatAgent):
 
     def on_reply(self, reply: TaskStructureReasonOutput):
         assert reply.summary, "Reply is empty"
-        _C(Markdown("### 任务总结\n\n" + reply.summary), reply_type=ReplyType.TASK_RESULT)
-        self.task.set_data("result", reply.summary)
+        _M("### 任务总结\n\n" + reply.summary)
+        self.task.agent_data.result = reply.summary
         if reply.important_infos:
-            self.task.set_data("important_infos", reply.important_infos)
-            _O(
-                markdown_block(
-                    f"```json\n{json.dumps(reply.important_infos, indent=4, ensure_ascii=False)}\n```",
-                    title="重要信息",
-                )
+            self.task.agent_data.important_infos = reply.important_infos
+            _B(
+                json.dumps(reply.important_infos, indent=4, ensure_ascii=False),
+                title="重要信息",
+                format="code",
+                code_language="json",
             )
         if reply.request_confirm_infos:
-            _O(Markdown(f"### 需要补充确认的信息\n"))
-            _O(Markdown(format_user_prompts(reply.request_confirm_infos, title="用户补充确认信息")))
+            self.task.agent_data.request_below_supply_infos = reply.request_confirm_infos
+            return TaskStructureReasonState.REQUEST_INFO
+        return TaskStructureReasonState.DONE

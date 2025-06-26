@@ -15,11 +15,15 @@ from IPython.display import Markdown
 from IPython.core.magic import Magics, magics_class, cell_magic
 from traitlets import Unicode, Int, Bool
 from traitlets.config.configurable import Configurable
-from .bot_contexts import NotebookContext, AgentCellContext
+from .bot_contexts import NotebookContext
 from .bot_agents import AgentFactory
 from .bot_agents.base import AgentModelType
-from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV1, TaskExecutorFlowV2, TaskExecutorFlowV3
+from .bot_agents.request_user_supply import RequestUserSupplyAgent
+from .bot_evaluators import EvaluatorFactory
+from .bot_flows import MasterPlannerFlow, TaskExecutorFlowV3
 from .bot_outputs import _D, _I, _W, _E, _F, _M, _B, _O, reset_output, set_logging_level, flush_output
+from .bot_actions import close_action_dispatcher
+from .utils import get_env_capbilities
 
 
 @magics_class
@@ -44,7 +48,11 @@ class BotMagics(Magics, Configurable):
     display_think = Bool(True, help="Display chatthink response").tag(config=True)
     display_response = Bool(False, help="Display chat full response").tag(config=True)
     support_save_meta = Bool(False, help="Support save metadata to cell").tag(config=True)
+    support_user_confirm = Bool(False, help="Support user confirm").tag(config=True)
+    support_user_supply_info = Bool(False, help="Support user supply info").tag(config=True)
+    support_set_cell_content = Bool(False, help="Support set cell content").tag(config=True)
     enable_evaluating = Bool(False, help="Enable evaluating task").tag(config=True)
+    enable_supply_mocking = Bool(False, help="Enable supply mocking").tag(config=True)
     notebook_path = Unicode(None, allow_none=True, help="Path to Notebook file").tag(config=True)
     default_task_flow = Unicode("v3", allow_none=True, help="Default task flow").tag(config=True)
     default_max_tries = Int(3, help="Default max tries for task execution").tag(config=True)
@@ -74,27 +82,16 @@ class BotMagics(Magics, Configurable):
             help="Run without confirm",
         )
         options, _ = parser.parse_known_args(shlex.split(line.strip()))
-
         return options
-
-    def ensure_notebook_path(self):
-        if self.notebook_path:
-            return self.notebook_path
-        result = self.shell and self.shell.run_cell("globals().get('__vsc_ipynb_file__')")
-        if result and result.success and result.result:
-            self.notebook_path = result.result
-            return self.notebook_path
-        try:
-            self.notebook_path = str(ipynbname.path())
-            return self.notebook_path
-        except Exception as e:
-            _F(f"Failed to get notebook path: {e}")
-            return None
 
     @cell_magic
     def bot(self, line, cell):
         """Jupyter cell magic: %%bot"""
         try:
+            reset_output(stage="Logging", logging_level=self.logging_level)
+            _I("Cell magic %%bot executing ...")
+            _D(f"Cell magic called with line: {line}")
+            _D(f"Cell magic called with cell: {repr(cell)[:50]} ...")
             if not self.ensure_notebook_path():
                 _O(
                     Markdown(
@@ -104,11 +101,6 @@ class BotMagics(Magics, Configurable):
                     )
                 )
                 return
-            AgentCellContext.SUPPORT_SAVE_META = self.support_save_meta
-            reset_output(stage="Logging", logging_level=self.logging_level)
-            _I("Cell magic %%bot executing ...")
-            _D(f"Cell magic called with line: {line}")
-            _D(f"Cell magic called with cell: {repr(cell)[:50]} ...")
             if not cell.strip():
                 _O(
                     Markdown(
@@ -121,51 +113,23 @@ class BotMagics(Magics, Configurable):
                         "%%bot {}\n\n# {}".format(line.strip(), time.strftime("%Y-%m-%d %H:%M:%S")), replace=True
                     )
                 return
+            get_env_capbilities().save_metadata = self.support_save_meta
+            get_env_capbilities().user_confirm = self.support_user_confirm
+            get_env_capbilities().user_supply_info = self.support_user_supply_info
+            get_env_capbilities().set_cell_content = self.support_set_cell_content
+            RequestUserSupplyAgent.MOCK_USER_SUPPLY = self.enable_supply_mocking
             options = self.parse_args(line)
-            _D(f"Cell magic called with options: {options}")
             set_logging_level(options.logging_level)
+            _D(f"Cell magic called with options: {options}")
             nb_context = NotebookContext(line, cell, notebook_path=self.notebook_path)
-            agent_factory = AgentFactory(
-                nb_context,
-                display_think=self.display_think,
-                display_message=self.display_message,
-                display_response=self.display_response,
-            )
-            agent_factory.config_model(
-                AgentModelType.DEFAULT,
-                self.default_api_url,
-                self.default_api_key,
-                self.default_model_name,
-            )
-            agent_factory.config_model(
-                AgentModelType.PLANNER,
-                self.planner_api_url,
-                self.planner_api_key,
-                self.planner_model_name,
-            )
-            agent_factory.config_model(
-                AgentModelType.CODING,
-                self.coding_api_url,
-                self.coding_api_key,
-                self.coding_model_name,
-            )
-            agent_factory.config_model(
-                AgentModelType.REASONING,
-                self.reasoning_api_url,
-                self.reasoning_api_key,
-                self.reasoning_model_name,
-            )
+            agent_factory = self.get_agent_factory(nb_context)
+            evaluator_factory = self.get_evaluator_factory(nb_context)
             if options.planning:
-                flow = MasterPlannerFlow(nb_context, agent_factory, self.enable_evaluating)
+                flow = MasterPlannerFlow(nb_context, agent_factory, evaluator_factory)
+            elif options.flow == "v3":
+                flow = TaskExecutorFlowV3(nb_context, agent_factory, evaluator_factory)
             else:
-                if options.flow == "v1":
-                    flow = TaskExecutorFlowV1(nb_context, agent_factory, self.enable_evaluating)
-                elif options.flow == "v2":
-                    flow = TaskExecutorFlowV2(nb_context, agent_factory, self.enable_evaluating)
-                elif options.flow == "v3":
-                    flow = TaskExecutorFlowV3(nb_context, agent_factory, self.enable_evaluating)
-                else:
-                    raise ValueError(f"Unknown flow: {options.flow}")
+                raise ValueError(f"Unknown flow: {options.flow}")
             flow(
                 options.stage,
                 options.max_tries,
@@ -175,7 +139,64 @@ class BotMagics(Magics, Configurable):
         except Exception as e:
             traceback.print_exc()
         finally:
+            close_action_dispatcher()
             flush_output()
+
+    def ensure_notebook_path(self):
+        if self.notebook_path:
+            return self.notebook_path
+        result = self.shell and self.shell.run_cell(
+            "globals().get('__vsc_ipynb_file__') or globals().get('__evaluation_ipynb_file__')"
+        )
+        if result and result.success and result.result:
+            self.notebook_path = result.result
+            return self.notebook_path
+        try:
+            self.notebook_path = str(ipynbname.path())
+            return self.notebook_path
+        except Exception as e:
+            _F(f"Failed to get notebook path: {e}")
+            return None
+
+    def get_agent_factory(self, nb_context):
+        agent_factory = AgentFactory(
+            nb_context,
+            display_think=self.display_think,
+            display_message=self.display_message,
+            display_response=self.display_response,
+        )
+        agent_factory.config_model(
+            AgentModelType.DEFAULT, self.default_api_url, self.default_api_key, self.default_model_name
+        )
+        agent_factory.config_model(
+            AgentModelType.PLANNER, self.planner_api_url, self.planner_api_key, self.planner_model_name
+        )
+        agent_factory.config_model(
+            AgentModelType.CODING, self.coding_api_url, self.coding_api_key, self.coding_model_name
+        )
+        agent_factory.config_model(
+            AgentModelType.REASONING, self.reasoning_api_url, self.reasoning_api_key, self.reasoning_model_name
+        )
+        return agent_factory
+
+    def get_evaluator_factory(self, nb_context):
+        if self.enable_evaluating:
+            evaluator_factory = EvaluatorFactory(nb_context)
+            evaluator_factory.config_model(
+                AgentModelType.DEFAULT, self.default_api_url, self.default_api_key, self.default_model_name
+            )
+            evaluator_factory.config_model(
+                AgentModelType.PLANNER, self.planner_api_url, self.planner_api_key, self.planner_model_name
+            )
+            evaluator_factory.config_model(
+                AgentModelType.CODING, self.coding_api_url, self.coding_api_key, self.coding_model_name
+            )
+            evaluator_factory.config_model(
+                AgentModelType.REASONING, self.reasoning_api_url, self.reasoning_api_key, self.reasoning_model_name
+            )
+        else:
+            evaluator_factory = None
+        return evaluator_factory
 
 
 def load_ipython_extension(ipython):

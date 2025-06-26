@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat, AgentModelType
 from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _A, _O, _C, _M, _B
-from ..utils import RequestUserPrompt, format_user_prompts
+from ..bot_actions import RequestUserSupplyInfo
 
 
 TASK_PLANNER_PROMPT = """\
@@ -131,7 +131,7 @@ class TaskPlannerOutput(BaseModel):
         ),
         examples=["请对当前任务的结果进行总结，输出以下要素：..."],
     )
-    request_supply_infos: Optional[List[RequestUserPrompt]] = Field(
+    request_supply_infos: Optional[List[RequestUserSupplyInfo]] = Field(
         None, description=f'需要用户补充更详细的信息的 Prompt, 在 state="{TaskPlannerState.REQUEST_INFO}" 时必填'
     )
 
@@ -151,8 +151,7 @@ class TaskPlannerAgentV3(BaseChatAgent):
             return False, reply.state
         elif reply.state == TaskPlannerState.REQUEST_INFO:
             assert reply.request_supply_infos, "Request info prompt is empty"
-            _O(Markdown(f"### 需要补充更详细的信息\n"))
-            _O(Markdown(format_user_prompts(reply.request_supply_infos)))
+            self.task.agent_data.request_above_supply_infos = reply.request_supply_infos
             return True, reply.state
         elif reply.state == TaskPlannerState.CODING_PLANNED:
             assert reply.subtask_id, "Subtask id is empty"
@@ -165,11 +164,11 @@ class TaskPlannerAgentV3(BaseChatAgent):
                 f"- Coding: {reply.subtask_coding_prompt}\n"
                 f"- Summary: {reply.subtask_summary_prompt}\n"
             )
-            self.task.set_data("task_id", reply.subtask_id)
-            self.task.set_data("subject", reply.subtask_subject)
-            self.task.set_data("coding_prompt", reply.subtask_coding_prompt)
-            self.task.set_data("summary_prompt", reply.subtask_summary_prompt)
-            self.task.set_data("result", "")
+            self.task.agent_data.task_id = reply.subtask_id
+            self.task.agent_data.subject = reply.subtask_subject
+            self.task.agent_data.coding_prompt = reply.subtask_coding_prompt
+            self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
+            self.task.agent_data.result = ""
             return False, reply.state
         elif reply.state == TaskPlannerState.REASONING_PLANNED:
             assert reply.subtask_id, "Subtask id is empty"
@@ -180,10 +179,10 @@ class TaskPlannerAgentV3(BaseChatAgent):
                 f"- ID: {reply.subtask_id}\n"
                 f"- Reasoning: {reply.subtask_summary_prompt}\n"
             )
-            self.task.set_data("task_id", reply.subtask_id)
-            self.task.set_data("subject", reply.subtask_subject)
-            self.task.set_data("summary_prompt", reply.subtask_summary_prompt)
-            self.task.set_data("result", "")
+            self.task.agent_data.task_id = reply.subtask_id
+            self.task.agent_data.subject = reply.subtask_subject
+            self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
+            self.task.agent_data.result = ""
             return False, reply.state
         else:
             raise ValueError(f"Unknown task planner state: {reply.state}")

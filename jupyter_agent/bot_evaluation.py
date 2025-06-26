@@ -12,173 +12,270 @@ import argparse
 import nbformat
 
 from pathlib import Path
+from typing import Optional
+from enum import Enum
+from pydantic import BaseModel, Field
 from nbclient.client import NotebookClient
-from .bot_outputs import NotebookEvalutionRecord, FlowEvalutionRecord, StageEvalutionRecord, BaseEvalutionRecord
+from .bot_actions import ActionBase, ActionSetNextCell, SetNextCellParams, get_action_class
 
 
-def run_notebook(
-    input_path: str | Path,
-    output_path: str | Path = "",
-    inplace: bool = False,
-    timeout: int = -1,
-    startup_timeout: int = 60,
-    allow_errors: bool = False,
-    kernel_name: str = "",
-    skip_cells_with_tag: str = "skip-execution",
-    evaluation_path: str | Path = "",
-) -> None:
-    """Run a notebook by path."""
-    input_path = Path(input_path).with_suffix(".ipynb")
+class BaseEvalutionRecord(BaseModel):
+    timestamp: float = 0
+    notebook_name: str = ""
+    evaluator: str = ""
+    eval_type: str = "BASE"
+    cell_index: int = -1
+    execution_duration: float = 0.0
+    is_success: bool = False
+    correct_score: float = 0.0
 
-    assert not (inplace and output_path), "Cannot specify both 'inplace' and 'output_path'"
-    if inplace:
-        output_path = input_path
-    elif not output_path:
-        output_path = input_path.parent.joinpath(f"{input_path.with_suffix('').name}_executed.ipynb")
-    output_path = os.path.abspath(output_path)
 
-    # Open up the notebook we're going to run
-    with input_path.open() as f:
-        print("Running notebook:", input_path)
-        nb = nbformat.read(f, as_version=4)
+class StageEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "STAGE"
+    flow: str = ""
+    stage: str = ""
+    agent: str = ""
 
-    start_time = 0
-    is_global_finished = False
 
-    def save_evaluation_record(record):
-        nonlocal evaluation_path
+class FlowEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "FLOW"
+    flow: str = ""
+    stage_count: int = 0
+    planning_score: float = 0.0
+    reasoning_score: float = 0.0
+    coding_score: float = 0.0
+    important_score: float = 0.0
+    user_supply_score: float = 0.0
 
+
+class NotebookEvalutionRecord(BaseEvalutionRecord):
+    eval_type: str = "NOTEBOOK"
+    flow_count: int = 0
+    planning_score: float = 0.0
+    coding_score: float = 0.0
+    important_score: float = 0.0
+    user_supply_score: float = 0.0
+
+
+class NotebookRunner:
+
+    def __init__(
+        self,
+        input_path: str | Path,
+        output_path: str | Path = "",
+        evaluate_path: str | Path = "",
+        timeout: int = -1,
+        startup_timeout: int = 60,
+        allow_errors: bool = False,
+        skip_cells_with_tag: str = "skip-execution",
+        **kwargs,
+    ):
+        self.input_path = Path(input_path).with_suffix(".ipynb")
+        self.output_path = output_path
+        self.evaluate_path = evaluate_path
+        self.start_time = 0
+        self.is_global_finished = False
+
+        if not self.output_path:
+            self.output_path = self.input_path.parent.joinpath(f"{self.input_path.with_suffix('').name}_eval.ipynb")
+        if not self.evaluate_path:
+            self.evaluate_path = self.input_path.parent.joinpath(f"{self.input_path.with_suffix('').name}_eval.jsonl")
+        self.output_path = Path(self.output_path).absolute()
+        self.evaluate_path = Path(self.evaluate_path).absolute()
+
+        with self.input_path.open() as f:
+            print("Opening notebook:", input_path)
+            self.notebook = nbformat.read(f, as_version=4)
+
+        self.client = NotebookClient(
+            self.notebook,
+            timeout=timeout,
+            startup_timeout=startup_timeout,
+            skip_cells_with_tag=skip_cells_with_tag,
+            allow_errors=allow_errors,
+            resources={"metadata": {"path": self.input_path.parent.absolute()}},
+            on_notebook_start=self.on_notebook_start,
+            on_notebook_complete=self.on_notebook_complete,
+            on_cell_executed=self.on_cell_executed,
+            **kwargs,
+        )
+
+    def save_evaluation_record(self, record: BaseEvalutionRecord):
+
+        if isinstance(record, FlowEvalutionRecord):
+            eval_source = record.flow + "-" + record.evaluator
+        elif isinstance(record, StageEvalutionRecord):
+            eval_source = record.flow + "-" + record.stage + "-" + record.agent + "-" + record.evaluator
+        else:
+            eval_source = record.evaluator
         print(
-            f"CELL[{record.cell_index}] Evaluation: {record.eval_type}[{record.evaluator}] "
+            f"CELL[{record.cell_index}] Evaluation: {record.eval_type}[{eval_source}] "
+            f"{'SUCCESS' if record.is_success else 'FAILURE'} "
             f"duration: {record.execution_duration:.2f}s "
-            f"success: {record.is_success} "
             f"correct: {record.correct_score:.2f}"
         )
-        if evaluation_path:
-            with open(evaluation_path, "a") as eval_file:
+        if self.evaluate_path:
+            with open(self.evaluate_path, "a") as eval_file:
                 eval_file.write(record.model_dump_json() + "\n")
 
-    def save_notebook(**kwargs):
-        """Save the executed notebook to the specified output path."""
-        nonlocal is_global_finished
+    def handle_cell_payloads(self, cell_index, cell_payloads):
+        for payload in cell_payloads:
+            if payload.get("source") == "set_next_input" and payload.get("replace") is True:
+                print(f"CELL[{cell_index}] Replacing cell with set_next_input payload")
+                self.notebook.cells[cell_index].source = payload.get("text", "")
 
-        if kwargs:
-            cell_idx = kwargs.get("cell_index", 0)
-            cell_type = kwargs.get("cell", {}).get("cell_type")
-            cell_id = kwargs.get("cell", {}).get("id")
-            cell_exec_count = kwargs.get("cell", {}).get("execution_count")
-            cell_meta = kwargs.get("cell", {}).get("metadata", {})
-            cell_payloads = kwargs.get("execute_reply", {}).get("content", {}).get("payload", [])
-            cell_outputs = kwargs.get("cell", {}).get("outputs", [])
-            for payload in cell_payloads:
-                if payload.get("source") == "set_next_input" and payload.get("replace") is True:
-                    print(f"CELL[{cell_idx}] Replacing cell with set_next_input payload")
-                    nb.cells[cell_idx].source = payload.get("text", "")
-            cell_agent_data_timestamp = cell_meta.get("jupyter-agent-data-timestamp", 0)
-            output_agent_data_timestamp = cell_agent_data_timestamp
-            is_bot_cell = False
-            is_flow_completed = False
-            for output in cell_outputs:
-                if output["output_type"] == "display_data":
-                    output_meta = output.get("metadata", {})
-                    if (
-                        output_meta.get("jupyter-agent-data-store")
-                        and output_meta.get("jupyter-agent-data-timestamp", 0) > output_agent_data_timestamp
-                        and output_meta.get("jupyter-agent-data", {})
-                    ):
-                        print(f"CELL[{cell_idx}] Found jupyter-agent-data-store outputs, save it to cell metadata")
-                        output_agent_data_timestamp = output_meta.get("jupyter-agent-data-timestamp", 0)
-                        nb.cells[cell_idx].metadata["jupyter-agent-data-store"] = True
-                        nb.cells[cell_idx].metadata["jupyter-agent-data-timestamp"] = output_agent_data_timestamp
-                        if "jupyter-agent-data" not in nb.cells[cell_idx].metadata:
-                            nb.cells[cell_idx].metadata["jupyter-agent-data"] = {}
-                        nb.cells[cell_idx].metadata["jupyter-agent-data"].update(output_meta["jupyter-agent-data"])
+    def handle_jupyter_agent_data(self, cell_index, cell_meta, cell_output_metas):
+        cell_agent_data_timestamp = cell_meta.get("jupyter-agent-data-timestamp", 0)
+        output_agent_data_timestamp = cell_agent_data_timestamp
+        for output_meta in cell_output_metas:
+            if (
+                output_meta.get("jupyter-agent-data-store")
+                and output_meta.get("jupyter-agent-data-timestamp", 0) > cell_agent_data_timestamp
+                and output_meta.get("jupyter-agent-data", {})
+            ):
+                print(f"CELL[{cell_index}] Found jupyter-agent-data-store outputs, save it to cell metadata")
+                output_agent_data_timestamp = max(
+                    output_agent_data_timestamp,
+                    output_meta.get("jupyter-agent-data-timestamp", 0),
+                )
+                self.notebook.cells[cell_index].metadata["jupyter-agent-data-store"] = True
+                self.notebook.cells[cell_index].metadata["jupyter-agent-data-timestamp"] = output_agent_data_timestamp
+                if "jupyter-agent-data" not in self.notebook.cells[cell_index].metadata:
+                    self.notebook.cells[cell_index].metadata["jupyter-agent-data"] = {}
+                self.notebook.cells[cell_index].metadata["jupyter-agent-data"].update(
+                    output_meta["jupyter-agent-data"]
+                )
 
-                    for record in output_meta.get("jupyter-agent-evaluation-records", []):
-                        is_bot_cell = True
-                        if record["eval_type"] == "NOTEBOOK":
-                            record = NotebookEvalutionRecord(**record)
-                            record.timestamp = record.timestamp or time.time()
-                            record.notebook_name = output_path
-                            record.execution_duration = time.time() - start_time
-                            is_global_finished = True
-                            is_flow_completed = True
-                            del nb.cells[cell_idx + 1 :]  # Remove all cells after the notebook cell
-                        elif record["eval_type"] == "FLOW":
-                            record = FlowEvalutionRecord(**record)
-                            record.timestamp = record.timestamp or time.time()
-                            record.notebook_name = output_path
-                            is_flow_completed = True
-                        elif record["eval_type"] == "STAGE":
-                            record = StageEvalutionRecord(**record)
-                            record.timestamp = record.timestamp or time.time()
-                            record.notebook_name = output_path
-                        else:
-                            record = BaseEvalutionRecord(**record)
-                            record.timestamp = record.timestamp or time.time()
-                            record.notebook_name = output_path
-                        save_evaluation_record(record)
-            if is_bot_cell and not is_flow_completed:
-                record = FlowEvalutionRecord(
+    def handle_evalution_record(self, cell_index, cell_output_metas):
+        is_bot_cell = False
+        is_flow_completed = False
+        for output_meta in cell_output_metas:
+            for record in output_meta.get("jupyter-agent-evaluation-records", []):
+                is_bot_cell = True
+                if record["eval_type"] == "NOTEBOOK":
+                    record = NotebookEvalutionRecord(**record)
+                    record.timestamp = record.timestamp or time.time()
+                    record.notebook_name = str(self.output_path)
+                    record.execution_duration = time.time() - self.start_time
+                    self.is_global_finished = True
+                    is_flow_completed = True
+                    del self.notebook.cells[cell_index + 1 :]  # Remove all cells after the notebook cell
+                elif record["eval_type"] == "FLOW":
+                    record = FlowEvalutionRecord(**record)
+                    record.timestamp = record.timestamp or time.time()
+                    record.notebook_name = str(self.output_path)
+                    is_flow_completed = True
+                elif record["eval_type"] == "STAGE":
+                    record = StageEvalutionRecord(**record)
+                    record.timestamp = record.timestamp or time.time()
+                    record.notebook_name = str(self.output_path)
+                else:
+                    record = BaseEvalutionRecord(**record)
+                    record.timestamp = record.timestamp or time.time()
+                    record.notebook_name = str(self.output_path)
+                self.save_evaluation_record(record)
+        if is_bot_cell and not is_flow_completed:
+            self.save_evaluation_record(
+                FlowEvalutionRecord(
                     timestamp=time.time(),
-                    notebook_name=output_path,
+                    notebook_name=str(self.output_path),
                     evaluator="bot",
                     eval_type="FLOW",
-                    cell_index=cell_idx,
+                    cell_index=cell_index,
                     is_success=False,
                 )
-                save_evaluation_record(record)
-            print(f"CELL[{cell_idx}] Saving executed {cell_type} cell - {cell_id}: {cell_exec_count}")
+            )
+
+    def handle_set_next_cell(self, cell_index, action):
+        if action.params.index == 0:
+            self.notebook.cells[cell_index].source = action.params.source
+            self.notebook.cells[cell_index].metadata.update(action.params.metadata)
+            self.notebook.cells[cell_index].metadata["tags"] = action.params.tags
+            print(f"CELL[{cell_index}] Replacing cell with set_next_cell action")
         else:
-            print(f"Saving executed notebook to: {output_path}")
-        nbformat.write(nb, output_path)
+            metadata = dict(action.params.metadata)
+            metadata["tags"] = action.params.tags
+            if action.params.type == "code":
+                new_cell = nbformat.v4.new_code_cell(source=action.params.source, metadata=metadata)
+            elif action.params.type == "markdown":
+                new_cell = nbformat.v4.new_markdown_cell(source=action.params.source, metadata=metadata)
+            else:
+                raise ValueError(f"Unsupported cell type: {action.params.type}")
+            insert_idx = cell_index if action.params.index == -1 else cell_index + action.params.index
+            ret_idx = cell_index + 1 if action.params.index == -1 else cell_index
+            self.notebook.cells.insert(insert_idx, new_cell)
+            print(f"CELL[{cell_index}] Inserting  cell at [{insert_idx}] with set_next_cell action")
+        return ret_idx
 
-    # Add metadata to the notebook
-    nb.cells.insert(
-        0,
-        nbformat.v4.new_code_cell(
-            source=(
-                f"# Executed notebook: {input_path.name}\n"
-                f"# Output saved to: {output_path}\n\n"
-                f"__evaluation_ipynb_file__ = '{output_path}'\n"
-            ),
-            metadata={"tags": ["CTX_EXCLUDE"]},
-        ),
-    )
-    save_notebook()
+    def handle_jupyter_agent_actions(self, cell_index, cell_meta, cell_output_metas):
+        cell_action_timestamp = cell_meta.get("jupyter-agent-action-timestamp", 0)
+        output_action_timestamp = cell_action_timestamp
+        for output_meta in cell_output_metas:
+            for action in output_meta.get("jupyter-agent-action-records", []):
+                action = get_action_class(action["action"])(**action)
+                if action.timestamp > cell_action_timestamp:
+                    output_action_timestamp = max(action.timestamp, output_action_timestamp)
+                    if isinstance(action, ActionSetNextCell):
+                        print(f"CELL[{cell_index}] Action: {action.action} - {action.source} - {action.timestamp}")
+                        cell_index = self.handle_set_next_cell(cell_index, action)
+        self.notebook.cells[cell_index].metadata["jupyter-agent-action-timestamp"] = output_action_timestamp
 
-    # Configure nbclient to run the notebook
-    client = NotebookClient(
-        nb,
-        timeout=timeout,
-        startup_timeout=startup_timeout,
-        skip_cells_with_tag=skip_cells_with_tag,
-        allow_errors=allow_errors,
-        kernel_name=kernel_name,
-        resources={"metadata": {"path": input_path.parent.absolute()}},
-        on_cell_executed=save_notebook,
-    )
+    def on_cell_executed(self, cell_index, cell, execute_reply):
+        cell_id = cell.get("id")
+        cell_type = cell.get("cell_type")
+        cell_meta = cell.get("metadata", {})
+        cell_outputs = cell.get("outputs", [])
+        cell_payloads = execute_reply.get("content", {}).get("payload", [])
+        cell_output_metas = [
+            output["metadata"]
+            for output in cell_outputs
+            if output.get("output_type") == "display_data" and output.get("metadata")
+        ]
+        self.handle_cell_payloads(cell_index, cell_payloads)
+        self.handle_jupyter_agent_data(cell_index, cell_meta, cell_output_metas)
+        self.handle_evalution_record(cell_index, cell_output_metas)
+        self.handle_jupyter_agent_actions(cell_index, cell_meta, cell_output_metas)
+        print(f"CELL[{cell_index}] Saving executed {cell_type} cell - {cell_id}")
+        nbformat.write(self.notebook, self.output_path)
 
-    # Run it
-    print("Executing notebook...")
-    start_time = time.time()
-    client.execute()
-    save_notebook()
-    print("Notebook execution completed.")
+    def on_notebook_start(self, notebook):
+        print("Notebook execution started.")
+        self.start_time = time.time()
+        if not self.notebook.cells[0].source.startswith("# -*- Jupyter Agent Evaluation Notebook -*-"):
+            self.notebook.cells.insert(
+                0,
+                nbformat.v4.new_code_cell(
+                    source=(
+                        f"# -*- Jupyter Agent Evaluation Notebook -*-\n"
+                        f"# Executed notebook: {self.input_path}\n"
+                        f"# Output saved to: {self.output_path}\n\n"
+                        f"__evaluation_ipynb_file__ = '{self.output_path}'\n"
+                    ),
+                    metadata={"tags": ["CTX_EXCLUDE"]},
+                ),
+            )
 
-    # If the notebook did not finish globally, append an evaluation record
-    if not is_global_finished:
-        print("Notebook execution did not finish globally, appending evaluation records.")
-        record = NotebookEvalutionRecord(
-            notebook_name=output_path,
-            timestamp=time.time(),
-            evaluator="bot",
-            eval_type="NOTEBOOK",
-            execution_duration=time.time() - start_time,
-            is_success=False,
-            correct_score=0.0,
-        )
-        save_evaluation_record(record)
+    def on_notebook_complete(self, notebook):
+        print("Notebook execution completed.")
+        # If the notebook did not finish globally, append an evaluation record
+        if not self.is_global_finished:
+            print("Notebook execution did not finish globally, appending evaluation records.")
+            self.save_evaluation_record(
+                NotebookEvalutionRecord(
+                    notebook_name=str(self.output_path),
+                    timestamp=time.time(),
+                    evaluator="bot",
+                    eval_type="NOTEBOOK",
+                    execution_duration=time.time() - self.start_time,
+                    is_success=False,
+                )
+            )
+        print(f"Saving executed notebook to: {self.output_path}")
+        nbformat.write(self.notebook, self.output_path)
+
+    def run(self):
+
+        self.client.execute()
 
 
 def main():
@@ -188,14 +285,7 @@ def main():
         "-o", "--output_path", type=str, default="", help="Path to save the executed notebook (default: same as input)"
     )
     parser.add_argument(
-        "-i", "--inplace", action="store_true", help="Run the notebook in place (overwrite input file)"
-    )
-    parser.add_argument(
-        "-e",
-        "--evaluation_path",
-        type=str,
-        default="",
-        help="Path to save evaluation records (default: no evaluation records saved)",
+        "-e", "--evaluate_path", type=str, default="", help="Path to save evaluate records (default: same as input)"
     )
     parser.add_argument(
         "--timeout", type=int, default=-1, help="Execution timeout in seconds (default: -1, no timeout)"
@@ -218,17 +308,16 @@ def main():
     parser.add_argument("input_path", type=str, help="Path to the input notebook file")
     args = parser.parse_args()
 
-    run_notebook(
+    NotebookRunner(
         input_path=args.input_path,
         output_path=args.output_path,
-        inplace=args.inplace,
+        evaluate_path=args.evaluate_path,
         timeout=args.timeout,
         startup_timeout=args.startup_timeout,
         allow_errors=args.allow_errors,
         kernel_name=args.kernel_name,
         skip_cells_with_tag=args.skip_cells_with_tag,
-        evaluation_path=args.evaluation_path,
-    )
+    ).run()
 
 
 if __name__ == "__main__":

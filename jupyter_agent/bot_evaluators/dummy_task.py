@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 import time
 
 from .base import BaseEvaluator
-from ..bot_outputs import StageEvalutionRecord
+from ..bot_evaluation import StageEvalutionRecord
 
 
 class DummyTaskEvaluator(BaseEvaluator):

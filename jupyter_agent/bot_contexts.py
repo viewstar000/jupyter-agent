@@ -21,6 +21,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from IPython.core.getipython import get_ipython
 from .bot_outputs import _D, _I, _W, _E, _F, _A, ReplyType
+from .utils import get_env_capbilities
 
 
 class CellType(str, Enum):
@@ -175,23 +176,24 @@ class AgentData(BaseModel):
     issue: str = Field("", description="Agent验证不通过的问题")
     result: str = Field("", description="Agent执行结果")
     important_infos: Optional[dict] = Field(None, description="重要信息[JSON]")
+    request_above_supply_infos: Optional[list] = Field(None, description="前置用户需求补充[JSON]")
+    request_below_supply_infos: Optional[list] = Field(None, description="后置用户需求补充[JSON]")
 
     @classmethod
-    def default(cls):
+    def default(cls) -> "AgentData":
         model_fields = getattr(cls, "model_fields", None)
         if model_fields and hasattr(model_fields, "items"):
-            return {
+            default = {
                 name: field.examples[0] if getattr(field, "examples", None) else getattr(field, "default", None)
                 for name, field in model_fields.items()
             }
         else:
-            return {}
+            default = {}
+        return cls(**default)  # type: ignore
 
 
 class AgentCellContext(CodeCellContext):
     """任务单元格上下文类"""
-
-    SUPPORT_SAVE_META: bool = False
 
     def __init__(self, idx: int, cell: dict):
         """初始化任务单元格上下文"""
@@ -202,8 +204,8 @@ class AgentCellContext(CodeCellContext):
         self.magic_argv = shlex.split(self.magic_line)
         self.magic_name = self.magic_argv[0]
         self.magic_argv = self.magic_argv[1:]
+        self.agent_data = AgentData.default()
         self._remain_args = []
-        self._agent_data = AgentData.default()
         self._cell_code = ""
         self.parse_magic_argv()
         self.load_result_from_outputs(cell)
@@ -224,16 +226,19 @@ class AgentCellContext(CodeCellContext):
 
     @property
     def result(self):
-        return self._agent_data["result"]
+        return self.agent_data.result
 
     def __getattr__(self, name):
-        return self._agent_data[name]
+        return getattr(self.agent_data, name)
+
+    def has_data(self, name):
+        return hasattr(self.agent_data, name)
 
     def get_data(self, name):
-        return self._agent_data[name]
+        return getattr(self.agent_data, name)
 
     def set_data(self, name, value):
-        self._agent_data[name] = value
+        setattr(self.agent_data, name, value)
 
     def parse_magic_argv(self):
         """解析任务单元格的magic命令参数"""
@@ -283,11 +288,11 @@ class AgentCellContext(CodeCellContext):
             try:
                 cell_options = yaml.safe_load(cell_options)
                 for key, value in cell_options.items():
-                    if key in self._agent_data:
-                        if isinstance(self._agent_data[key], (dict, list)) and isinstance(value, str):
+                    if self.has_data(key):
+                        if isinstance(self.get_data(key), (dict, list)) and isinstance(value, str):
                             value = json.loads(value)
                         _D("CELL[{}] Load task option {}: {}".format(self.cell_idx, key, value))
-                        self._agent_data[key] = value
+                        self.set_data(key, value)
             except Exception as e:
                 _W("Failed to load task options {}: {}".format(type(e), str(e)))
                 _W(traceback.format_exc(limit=2))
@@ -304,15 +309,15 @@ class AgentCellContext(CodeCellContext):
                     _D(f"CELL[{self.cell_idx}] Task result: {repr(output_text)[:80]}")
                     task_result += "\n" + output_text
         if task_result.strip():
-            self._agent_data["result"] = task_result
+            self.agent_data.result = task_result
 
     def load_data_from_metadata(self, cell):
         agent_meta_infos = cell.get("metadata", {}).get("jupyter-agent-data", {})
         _D("CELL[{}] Agent Meta Data: {}".format(self.cell_idx, repr(agent_meta_infos)[:80]))
         for k, v in agent_meta_infos.items():
-            if k in self._agent_data:
+            if self.has_data(k):
                 _D(f"CELL[{self.cell_idx}] Load agent meta data: {k}: {repr(v)[:80]}")
-                self._agent_data[k] = v
+                self.set_data(k, v)
 
     def format_magic_line(self):
         magic_args = ["%%bot"]
@@ -365,13 +370,13 @@ class AgentCellContext(CodeCellContext):
 
     def format_cell_options(self):
         cell_options = {}
-        if self.SUPPORT_SAVE_META:
-            if self._agent_data.get("task_id"):
-                cell_options["task_id"] = self._agent_data["task_id"]
-            if self._agent_data.get("subject"):
-                cell_options["subject"] = self._agent_data["subject"]
+        if get_env_capbilities().save_metadata:
+            if self.agent_data.task_id:
+                cell_options["task_id"] = self.agent_data.task_id
+            if self.agent_data.subject:
+                cell_options["subject"] = self.agent_data.subject
         else:
-            for key, value in self._agent_data.items():
+            for key, value in self.agent_data.model_dump().items():
                 if key == "result" and self.type == CellType.PLANNING:
                     continue
                 if value:
@@ -394,7 +399,7 @@ class AgentCellContext(CodeCellContext):
     def update_cell(self):
         """生成Cell内容"""
         _I("Updating Cell ...")
-        _A(**self._agent_data)
+        _A(**self.agent_data.model_dump())
         cell_source = ""
         cell_source += self.format_magic_line()
         cell_source += "\n" + self.format_cell_options()
