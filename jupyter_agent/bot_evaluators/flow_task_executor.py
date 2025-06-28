@@ -64,17 +64,27 @@ FLOW_TASK_EXEC_EVAL_PROMPT = """\
 {{ task.summary_prompt }}
 
 
-### 当前子任务最终总结输出结果：
+### 当前子任务输出的分析总结后的最终结果：
 
 ```markdown
 {{ task.result }}
 ```
 
-### 当前子任务重要信息：
+{% if task.important_infos %}
+### 当前子任务输出的重要信息：
 
 ```json
 {{ task.important_infos | json }}
 ```
+{% endif %}
+
+{% if task.request_below_supply_infos %}
+### 当前子任务输出的请求用户补充确认的信息：
+
+```json
+{{ task.request_below_supply_infos | json }}
+```
+{% endif %}
 
 ---
 

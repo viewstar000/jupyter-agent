@@ -16,7 +16,7 @@ from typing import Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 from nbclient.client import NotebookClient
-from .bot_actions import ActionBase, ActionSetNextCell, SetNextCellParams, get_action_class
+from .bot_actions import ActionBase, ActionSetCellContent, SetCellContentParams, get_action_class
 
 
 class BaseEvaluationRecord(BaseModel):
@@ -216,7 +216,7 @@ class NotebookRunner:
                 action = get_action_class(action["action"])(**action)
                 if action.timestamp > cell_action_timestamp:
                     output_action_timestamp = max(action.timestamp, output_action_timestamp)
-                    if isinstance(action, ActionSetNextCell):
+                    if isinstance(action, ActionSetCellContent):
                         print(f"CELL[{cell_index}] Action: {action.action} - {action.source} - {action.timestamp}")
                         cell_index = self.handle_set_next_cell(cell_index, action)
         self.notebook.cells[cell_index].metadata["jupyter-agent-action-timestamp"] = output_action_timestamp

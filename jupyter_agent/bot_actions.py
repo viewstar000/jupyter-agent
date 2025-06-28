@@ -19,33 +19,39 @@ from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, Field
 from wsgiref.simple_server import make_server
 from bottle import default_app, get, post, request, response
+from .utils import get_env_capbilities
 
 
 class ActionBase(BaseModel):
-    timestamp: float
+    timestamp: float = 0
+    uuid: str = ""
     source: str = ""
     action: str
     params: Dict[str, Any] = {}
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.timestamp = self.timestamp or time.time()
+        self.uuid = self.uuid or str(uuid.uuid4())
 
 
 class ReplyActionBase(ActionBase):
     reply_host: str = ""
     reply_port: int = 0
-    uuid: str = ""
 
 
-class SetNextCellParams(BaseModel):
-    index: int = 1
+class SetCellContentParams(BaseModel):
+    index: int = 1  # -1 previous, 0 current, 1 next
     type: str = "code"  # code/markdown
     source: str = ""
     tags: List[str] = []
     metadata: Dict[str, Any] = {}
 
 
-class ActionSetNextCell(ActionBase):
+class ActionSetCellContent(ActionBase):
 
-    action: str = "set_next_cell"
-    params: SetNextCellParams = SetNextCellParams()
+    action: str = "set_cell_content"
+    params: SetCellContentParams = SetCellContentParams()
 
 
 class ConfirmChoiceItem(BaseModel):
@@ -143,13 +149,16 @@ class ActionReply(BaseModel):
 class ActionDispatcher(threading.Thread):
     def __init__(self, host="127.0.0.1", port=0, app=None):
         super().__init__(daemon=True)
-        self.host = host
-        self.port = port or self.select_port(self.host)
-        self.app = app or default_app()
         self.action_queue = queue.Queue()
         self.action_replies: dict[str, ActionReply] = {}
-        self.server = make_server(self.host, self.port, self.app)
-        self.start()
+        self.app = app or default_app()
+        self.host = host
+        self.port = port
+        self.server = None
+        if get_env_capbilities().user_confirm or get_env_capbilities().user_supply_info:
+            self.port = self.port or self.select_port(self.host)
+            self.server = make_server(self.host, self.port, self.app)
+            self.start()
 
     def select_port(self, host):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -160,11 +169,13 @@ class ActionDispatcher(threading.Thread):
         return port
 
     def run(self):
-        self.server.serve_forever()
+        if self.server is not None:
+            self.server.serve_forever()
 
     def close(self):
-        self.server.shutdown()
-        self.server.server_close()
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
 
     def __del__(self):
         self.close()
@@ -179,10 +190,10 @@ class ActionDispatcher(threading.Thread):
 
         if need_reply:
             assert isinstance(action, ReplyActionBase)
-            action.uuid = action.uuid and str(uuid.uuid4())
             action.reply_host = self.host
             action.reply_port = self.port
         action.timestamp = action.timestamp or time.time()
+        action.uuid = action.uuid and str(uuid.uuid4())
         self.action_queue.put(action.model_dump())
         bot_outputs = importlib.import_module(".bot_outputs", __package__)
         bot_outputs.output_action(action)

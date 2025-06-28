@@ -3,6 +3,8 @@ import tempfile
 import time
 import nbformat
 import pytest
+import uuid
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from jupyter_agent import bot_evaluation
@@ -105,8 +107,8 @@ def test_handle_evaluation_record_notebook(sample_notebook, tmp_path):
 
 def test_handle_set_next_cell_replace(sample_notebook):
     runner = bot_evaluation.NotebookRunner(str(sample_notebook))
-    params = bot_evaluation.SetNextCellParams(index=0, source="replaced", metadata={}, tags=[], type="code")
-    action = bot_evaluation.ActionSetNextCell(params=params, timestamp=time.time())
+    params = bot_evaluation.SetCellContentParams(index=0, source="replaced", metadata={}, tags=[], type="code")
+    action = bot_evaluation.ActionSetCellContent(params=params)
     idx = runner.handle_set_next_cell(0, action)
     assert runner.notebook.cells[0].source == "replaced"
     assert idx == 0
@@ -114,8 +116,8 @@ def test_handle_set_next_cell_replace(sample_notebook):
 
 def test_handle_set_next_cell_insert(sample_notebook):
     runner = bot_evaluation.NotebookRunner(str(sample_notebook))
-    params = bot_evaluation.SetNextCellParams(index=1, source="inserted", metadata={}, tags=[], type="markdown")
-    action = bot_evaluation.ActionSetNextCell(params=params, timestamp=time.time())
+    params = bot_evaluation.SetCellContentParams(index=1, source="inserted", metadata={}, tags=[], type="markdown")
+    action = bot_evaluation.ActionSetCellContent(params=params)
     idx = runner.handle_set_next_cell(0, action)
     assert runner.notebook.cells[1].source == "inserted"
     assert idx == 0

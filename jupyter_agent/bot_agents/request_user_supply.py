@@ -6,6 +6,7 @@ https://opensource.org/licenses/MIT
 """
 
 import time
+import uuid
 import json
 
 from enum import Enum
@@ -22,8 +23,8 @@ from ..bot_actions import (
     RequestUserSupplyInfoParams,
     ActionReceiveUserSupplyInfo,
     ReceiveUserSupplyInfoParams,
-    ActionSetNextCell,
-    SetNextCellParams,
+    ActionSetCellContent,
+    SetCellContentParams,
 )
 from ..utils import get_env_capbilities
 
@@ -120,10 +121,9 @@ class RequestUserSupplyAgent(BaseChatAgent):
         assert reply, "Reply is empty"
         if get_env_capbilities().set_cell_content:
             insert_cell_idx = -1 if self.WHERE_USER_SUPPLY == "above" else 1
-            action = ActionSetNextCell(
-                timestamp=time.time(),
+            action = ActionSetCellContent(
                 source=self.__class__.__name__,
-                params=SetNextCellParams(
+                params=SetCellContentParams(
                     index=insert_cell_idx,
                     type="markdown",
                     source=format_received_user_supply_info(reply.replies, use_markdown_block=False),
@@ -145,8 +145,8 @@ class RequestUserSupplyAgent(BaseChatAgent):
             return super().__call__(**kwargs)
         else:
             if get_env_capbilities().user_supply_info:
+                _M(f"**需要用户补充确认信息**，请按要求补充确认信息。")
                 action = ActionRequestUserSupplyInfo(
-                    timestamp=time.time(),
                     source=self.__class__.__name__,
                     params=RequestUserSupplyInfoParams(title="用户需求补充确认", issues=request_supply_infos),
                 )
@@ -154,11 +154,15 @@ class RequestUserSupplyAgent(BaseChatAgent):
                 res = get_action_dispatcher().get_action_reply(action, wait=True)
                 return False, self.on_reply(res and res.params)  # type: ignore
             elif get_env_capbilities().set_cell_content:
+                _M(
+                    f"**需要用户补充确认信息**，"
+                    f"请将{'下面' if self.WHERE_USER_SUPPLY == 'below' else '上面'}的单元格中的内容补充完整，"
+                    f"以便于更好的完成任务"
+                )
                 insert_cell_idx = -1 if self.WHERE_USER_SUPPLY == "above" else 1
-                action = ActionSetNextCell(
-                    timestamp=time.time(),
+                action = ActionSetCellContent(
                     source=self.__class__.__name__,
-                    params=SetNextCellParams(
+                    params=SetCellContentParams(
                         index=insert_cell_idx,
                         type="markdown",
                         source=format_request_user_supply_info(request_supply_infos, use_markdown_block=False),
