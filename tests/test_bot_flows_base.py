@@ -14,7 +14,6 @@ class DummyStage(str, Enum):
 
 
 class DummyAgent(BaseAgent):
-    EVALUATORS = {"success": "dummy_evaluator"}
 
     def __call__(self):
         return False, "success"
@@ -56,7 +55,7 @@ class DummyStageNext(base.StageNext[DummyStage]):
     pass
 
 
-class DummyStageTransition(base.StageTransition[DummyStage, str]):
+class DummyStageTransition(base.StageNode[DummyStage, str]):
     pass
 
 
@@ -87,16 +86,16 @@ def evaluator_factory():
 
 def make_simple_flow():
     class SimpleFlow(base.BaseTaskFlow):
-        STAGE_TRANSITIONS = [
+        STAGE_NODES = [
             DummyStageTransition(
                 stage=DummyStage.START,
-                agent=DummyAgent,
+                agents=DummyAgent,
                 states={
                     "success": DummyStageNext(stage=DummyStage.END, message="Done!"),
                     "fail": DummyStageNext(stage=DummyStage.START, message="Retry!"),
                 },
             ),
-            DummyStageTransition(stage=DummyStage.END, agent=DummyAgent, states={}),
+            DummyStageTransition(stage=DummyStage.END, agents=DummyAgent, states={}),
         ]
         START_STAGE = DummyStage.START
         STOP_STAGES = [DummyStage.END]
@@ -107,14 +106,14 @@ def make_simple_flow():
 def test_prepare_stage_transitions(notebook_context, agent_factory):
     flow_cls = make_simple_flow()
     flow = flow_cls(notebook_context, agent_factory)
-    assert DummyStage.START in flow.stage_transitions
-    assert DummyStage.END in flow.stage_transitions
+    assert DummyStage.START in flow.stage_nodes
+    assert DummyStage.END in flow.stage_nodes
 
 
 def test_get_stage_agent_returns_agent(notebook_context, agent_factory):
     flow_cls = make_simple_flow()
     flow = flow_cls(notebook_context, agent_factory)
-    agent = flow.get_stage_agent(DummyStage.START)
+    agent = flow.get_stage_agents(DummyStage.START)[0]
     assert isinstance(agent, DummyAgent)
 
 
@@ -122,7 +121,7 @@ def test_get_stage_agent_raises_for_invalid_stage(notebook_context, agent_factor
     flow_cls = make_simple_flow()
     flow = flow_cls(notebook_context, agent_factory)
     with pytest.raises(ValueError):
-        flow.get_stage_agent("nonexistent")
+        flow.get_stage_agents("nonexistent")
 
 
 def test_get_next_stage_trans_returns_stage_next(notebook_context, agent_factory):
@@ -186,10 +185,10 @@ def test_call_with_failure_and_retry(
 ):
     # Flow with a failing agent
     class FailFlow(base.BaseTaskFlow):
-        STAGE_TRANSITIONS = [
+        STAGE_NODES = [
             DummyStageTransition(
                 stage=DummyStage.START,
-                agent=DummyFailAgent,
+                agents=DummyFailAgent,
                 states={
                     "fail": DummyStageNext(stage=DummyStage.START, message="Retry!"),
                 },

@@ -135,6 +135,7 @@ class AgentModelType(str, Enum):
     DEFAULT = "default"
     PLANNER = "planner"
     CODING = "coding"
+    EVALUATING = "evaluating"
     REASONING = "reasoning"
 
 
@@ -151,6 +152,9 @@ class BaseAgent:
     @property
     def cells(self):
         return self.notebook_context.cells
+
+    def __call__(self, **kwds: Any) -> Tuple[bool, Any]:
+        raise NotImplementedError
 
 
 class BaseChatAgent(BotChat, BaseAgent):

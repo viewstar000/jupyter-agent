@@ -98,7 +98,10 @@ class TaskStructureReasoningAgent(BaseChatAgent):
     def on_reply(self, reply: TaskStructureReasonOutput):
         assert reply.summary, "Reply is empty"
         _M("### 任务总结\n\n" + reply.summary)
+        self.task.agent_data.issue = ""
         self.task.agent_data.result = reply.summary
+        self.task.agent_data.important_infos = None
+        self.task.agent_data.request_below_supply_infos = None
         if reply.important_infos:
             self.task.agent_data.important_infos = reply.important_infos
             _B(

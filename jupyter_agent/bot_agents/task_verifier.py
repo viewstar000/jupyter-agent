@@ -87,6 +87,7 @@ class TaskVerifyAgent(BaseChatAgent):
 
         if reply.state == TaskVerifyState.PASSED:
             _M("### 任务验证通过！")
+            self.task.agent_data.issue = ""
             return False, reply.state
         else:
             _M("### 任务验证不通过！\n")
@@ -94,6 +95,6 @@ class TaskVerifyAgent(BaseChatAgent):
             if reply.issues:
                 for issue in reply.issues:
                     task_issue += "- {}\n".format(issue)
-            self.task.agent_data.issue = task_issue
             _M(task_issue)
+            self.task.agent_data.issue = task_issue
             return True, reply.state

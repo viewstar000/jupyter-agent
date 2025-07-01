@@ -111,6 +111,7 @@ class TaskVerifySummaryAgent(BaseChatAgent):
         if reply.state == TaskSummaryState.SUCCESS:
             assert reply.summary, "Summary is empty"
             _M("### 任务总结\n\n" + reply.summary)
+            self.task.agent_data.issue = ""
             self.task.agent_data.result = reply.summary
             return False, reply.state
         else:

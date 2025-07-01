@@ -11,7 +11,7 @@ from IPython.core.getipython import get_ipython
 from IPython.display import Markdown, clear_output
 from .base import BaseAgent
 from ..utils import TeeOutputCapture
-from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, ReplyType
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, flush_output
 
 
 class CodeExecutor(BaseAgent):
@@ -21,6 +21,8 @@ class CodeExecutor(BaseAgent):
         _D(f"执行代码: {repr(self.task.source)[:80]}")
         ipython = get_ipython()
         exec_failed = False
+        self.task.cell_output = ""
+        self.task.cell_error = ""
         with TeeOutputCapture() as captured:
             if ipython is None:
                 exec_failed = True
@@ -39,7 +41,6 @@ class CodeExecutor(BaseAgent):
                     clean_traceback = "\n".join(ansi_escape.sub("", line) for line in exc_info["traceback"])
                     self.task.cell_error = clean_traceback
                     _E(f"执行失败: {clean_traceback}")
-        self.task.cell_output = ""
         if captured.stdout:
             self.task.cell_output += "Stdout:\n" + captured.stdout + "\n"
         if captured.stderr:

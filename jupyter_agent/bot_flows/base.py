@@ -13,6 +13,7 @@ from enum import Enum
 from typing import List, Dict, Optional, Type
 from IPython.display import Markdown
 from ..bot_agents.base import BaseAgent
+from ..bot_evaluators.base import BaseEvaluator
 from ..bot_evaluators.dummy_global import DummyGlobalEvaluator
 from ..bot_evaluators.flow_task_executor import FlowTaskExecEvaluator
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B
@@ -39,9 +40,10 @@ class StageNext[ST](BaseModel):
     message: str = ""
 
 
-class StageTransition[ST, AS](BaseModel):
+class StageNode[ST, AS](BaseModel):
     stage: ST | str
-    agent: Type[BaseAgent] | str
+    agents: Type[BaseAgent] | List[Type[BaseAgent]]
+    evaluators: Optional[Type[BaseEvaluator] | List[Type[BaseEvaluator]]] = None
     states: Dict[AS | str, StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = {}
     next_stage: Optional[StageNext[ST] | List[StageNext[ST]] | Dict[TaskAction, StageNext[ST]] | ST | str] = None
 
@@ -51,7 +53,7 @@ class BaseTaskFlow:
     基础任务流程
     """
 
-    STAGE_TRANSITIONS: List[StageTransition] = []
+    STAGE_NODES: List[StageNode] = []
     START_STAGE = TASK_STAGE_START
     STOP_STAGES = [TASK_STAGE_COMPLETED, TASK_STAGE_GLOBAL_FINISHED]
     FLOW_EVALUATOR = FlowTaskExecEvaluator
@@ -61,8 +63,8 @@ class BaseTaskFlow:
         self.notebook_context = notebook_context
         self.agent_factory = agent_factory
         self.evaluator_factory = evaluator_factory
-        self.stage_transitions = {}
-        self.prepare_stage_transitions()
+        self.stage_nodes = {}
+        self.prepare_stage_nodes()
 
     @property
     def task(self):
@@ -72,10 +74,10 @@ class BaseTaskFlow:
     def cells(self):
         return self.notebook_context.cells
 
-    def prepare_stage_transitions(self):
-        for st in self.STAGE_TRANSITIONS:
+    def prepare_stage_nodes(self):
+        for st in self.STAGE_NODES:
             assert not (st.next_stage and st.states), "next_stage and states are mutually exclusive"
-            self.stage_transitions[st.stage] = st
+            self.stage_nodes[st.stage] = st
             if st.next_stage:
                 st.states[TaskAction.DEFAULT] = st.next_stage
                 st.next_stage = None
@@ -104,15 +106,29 @@ class BaseTaskFlow:
             if TASK_AGENT_STATE_ERROR not in st.states:
                 st.states[TASK_AGENT_STATE_ERROR] = {"*": StageNext(stage=st.stage)}
 
-    def get_stage_agent(self, stage):
-        for t in self.STAGE_TRANSITIONS:
+    def get_stage_agents(self, stage) -> List[BaseAgent]:
+        for t in self.STAGE_NODES:
             if t.stage == stage:
-                return self.agent_factory(t.agent)
+                if isinstance(t.agents, list):
+                    return [self.agent_factory(a) for a in t.agents]
+                else:
+                    return [self.agent_factory(t.agents)]
         raise ValueError(f"No agent for stage `{stage}`")
+
+    def get_stage_evaluators(self, stage) -> List[BaseEvaluator]:
+        if self.evaluator_factory is None:
+            return []
+        for t in self.STAGE_NODES:
+            if t.stage == stage:
+                if isinstance(t.evaluators, list):
+                    return [self.evaluator_factory(e) for e in t.evaluators]
+                else:
+                    return [self.evaluator_factory(t.evaluators)]
+        return []
 
     def _get_next_stage_trans(self, stage, state, action=TaskAction.CONTINUE):
 
-        st = self.stage_transitions.get(stage)
+        st = self.stage_nodes.get(stage)
         if st:
             state_ns = st.states.get(state) or st.states.get("*")
             assert state_ns, f"No next stage for stage `{stage}` and state `{state}`"
@@ -162,16 +178,19 @@ class BaseTaskFlow:
         stage_count = 0
         # Initialize the task stage
         stage = stage or self.START_STAGE
+        agent = None
         while n_tries <= max_tries:
             stage_st = time.time()
             try:
                 stage_name = stage.value if isinstance(stage, Enum) else stage
                 stage_name = stage_name.replace(".", "-").capitalize()
                 set_stage(stage_name)
-                agent = self.get_stage_agent(stage)
-                _M(f"**Executing** stage `{stage}` with agent `{type(agent).__name__}` ...")
-                failed, state = agent()
+                agents = self.get_stage_agents(stage)
+                for agent in agents:
+                    _I(f"Executing stage `{stage}` with agent `{type(agent).__name__}` ...")
+                    failed, state = agent()
             except Exception as e:
+                _W(f"Error during task execution stage `{stage}`: `{type(e)}`: `{e}`")
                 _M(f"**Error** during task execution stage `{stage}`: `{type(e)}`: `{e}`")
                 _M(f"```python\n{traceback.format_exc()}\n```")
                 state = TASK_AGENT_STATE_ERROR
@@ -179,30 +198,26 @@ class BaseTaskFlow:
             stage_count += 1
             stage_duration = time.time() - stage_st
             flow_duration += stage_duration
-            _M(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
-            if (
-                self.evaluator_factory is not None
-                and not failed
-                and hasattr(agent, "EVALUATORS")
-                and state in agent.EVALUATORS
-            ):
-                # If the agent has evaluators, run them
-                evaluator = self.evaluator_factory(agent.EVALUATORS[state])
-                try:
-                    _M(f"**Evaluating** stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
-                    evaluation_result = evaluator()
-                    evaluation_result.timestamp = evaluation_result.timestamp or time.time()
-                    evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
-                    evaluation_result.cell_index = self.task.cell_idx
-                    evaluation_result.flow = type(self).__name__
-                    evaluation_result.stage = str(stage)
-                    evaluation_result.agent = type(agent).__name__
-                    evaluation_result.execution_duration = stage_duration
-                    evaluation_result.is_success = not failed
-                    output_evaluation(evaluation_result)
-                except Exception as e:
-                    _M(f"**Error** during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
-                    _M(f"```python\n{traceback.format_exc()}\n```")
+            _I(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
+            if evaluators := self.get_stage_evaluators(stage):
+                for evaluator in evaluators:
+                    # If the agent has evaluators, run them
+                    try:
+                        _I(f"Evaluating stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
+                        evaluation_result = evaluator()
+                        evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                        evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                        evaluation_result.cell_index = self.task.cell_idx
+                        evaluation_result.flow = type(self).__name__
+                        evaluation_result.stage = str(stage)
+                        evaluation_result.agent = type(agent).__name__
+                        evaluation_result.execution_duration = stage_duration
+                        evaluation_result.is_success = not failed
+                        output_evaluation(evaluation_result)
+                    except Exception as e:
+                        _W(f"Error during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
+                        _M(f"**Error** during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
+                        _M(f"```python\n{traceback.format_exc()}\n```")
             else:
                 output_evaluation(
                     StageEvaluationRecord(
@@ -223,7 +238,7 @@ class BaseTaskFlow:
                 self.task.agent_stage = next_stage
                 self.task.update_cell()
                 if next_stage in self.STOP_STAGES:
-                    _M(f"Task execution **Stopped** at stage `{next_stage}`")
+                    _I(f"Task execution **Stopped** at stage `{next_stage}`")
                     stage = next_stage
                     break
 
@@ -244,20 +259,19 @@ class BaseTaskFlow:
                 self.task.agent_stage = next_stage
                 self.task.update_cell()
                 if action == TaskAction.STOP:
-                    _M(f"Task execution **Stopped**, and set next stage to `{next_stage}`")
+                    _I(f"Task execution **Stopped**, and set next stage to `{next_stage}`")
                     stage = next_stage
                     break
                 else:
-                    _M(f"**Action**: `{action}` transits stage to `{next_stage}`")
+                    _I(f"Action: `{action}` transits stage to `{next_stage}`")
                     stage = next_stage
             else:
                 # transit to the next stage without confirmation
                 next_stage = self.get_next_stage(stage, state, TaskAction.CONTINUE)
                 self.task.agent_stage = next_stage
                 self.task.update_cell()
-                _M(f"**Transits** stage to `{next_stage}`")
+                _I(f"Transits stage to `{next_stage}`")
                 stage = next_stage
-
             if not stage_continue:
                 break
         # Finalize the task execution
@@ -266,7 +280,7 @@ class BaseTaskFlow:
             _M("Task execution **finished** globally.")
             if self.evaluator_factory is not None and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
                 evaluator = self.evaluator_factory(self.GLOBAL_EVALUATOR)
-                _M(f"**Evaluating** notebook with evaluator `{type(evaluator).__name__}` ...")
+                _I(f"Evaluating notebook with evaluator `{type(evaluator).__name__}` ...")
                 evaluation_result = evaluator()
                 evaluation_result.timestamp = evaluation_result.timestamp or time.time()
                 evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
@@ -283,10 +297,10 @@ class BaseTaskFlow:
                     )
                 )
         elif stage_name == TASK_STAGE_COMPLETED:
-            _M(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
+            _I(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
             if self.evaluator_factory is not None and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
                 evaluator = self.evaluator_factory(self.FLOW_EVALUATOR)
-                _M(f"**Evaluating** flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
+                _I(f"Evaluating flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
                 evaluation_result = evaluator()
                 evaluation_result.timestamp = evaluation_result.timestamp or time.time()
                 evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__

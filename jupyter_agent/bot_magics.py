@@ -40,6 +40,9 @@ class BotMagics(Magics, Configurable):
     coding_api_url = Unicode(None, allow_none=True, help="Coding API URL").tag(config=True)
     coding_api_key = Unicode("API_KEY", help="Coding API Key").tag(config=True)
     coding_model_name = Unicode("", help="Coding Model Name").tag(config=True)
+    evaluating_api_url = Unicode(None, allow_none=True, help="Evaluating API URL").tag(config=True)
+    evaluating_api_key = Unicode("API_KEY", help="Evaluating API Key").tag(config=True)
+    evaluating_model_name = Unicode("", help="Evaluating Model Name").tag(config=True)
     reasoning_api_url = Unicode(None, allow_none=True, help="Reasoning API URL").tag(config=True)
     reasoning_api_key = Unicode("API_KEY", help="Reasoning API Key").tag(config=True)
     reasoning_model_name = Unicode("", help="Reasoning Model Name").tag(config=True)
@@ -54,9 +57,9 @@ class BotMagics(Magics, Configurable):
     enable_supply_mocking = Bool(False, help="Enable supply mocking").tag(config=True)
     notebook_path = Unicode(None, allow_none=True, help="Path to Notebook file").tag(config=True)
     default_task_flow = Unicode("v3", allow_none=True, help="Default task flow").tag(config=True)
-    default_max_tries = Int(3, help="Default max tries for task execution").tag(config=True)
+    default_max_tries = Int(2, help="Default max tries for task execution").tag(config=True)
     default_step_mode = Bool(False, help="Default step mode for task execution").tag(config=True)
-    default_auto_confirm = Bool(False, help="Default auto confirm for task execution").tag(config=True)
+    default_auto_confirm = Bool(True, help="Default auto confirm for task execution").tag(config=True)
 
     def parse_args(self, line):
         """解析命令行参数"""
@@ -67,18 +70,36 @@ class BotMagics(Magics, Configurable):
         parser.add_argument("-f", "--flow", type=str, default=self.default_task_flow, help="Flow name")
         parser.add_argument("-m", "--max-tries", type=int, default=self.default_max_tries, help="Max tries")
         parser.add_argument(
-            "-S",
+            "-t",
             "--step-mode",
             action="store_true",
+            dest="step_mode",
             default=self.default_step_mode,
             help="Run in single step mode",
         )
         parser.add_argument(
-            "-Y",
+            "-T",
+            "--not-step-mode",
+            action="store_false",
+            dest="step_mode",
+            default=self.default_step_mode,
+            help="Run in multi step mode",
+        )
+        parser.add_argument(
+            "-y",
             "--auto-confirm",
             action="store_true",
+            dest="auto_confirm",
             default=self.default_auto_confirm,
             help="Run without confirm",
+        )
+        parser.add_argument(
+            "-Y",
+            "--not-auto-confirm",
+            action="store_false",
+            dest="auto_confirm",
+            default=self.default_auto_confirm,
+            help="Run with confirm",
         )
         options, _ = parser.parse_known_args(shlex.split(line.strip()))
         return options
@@ -174,6 +195,9 @@ class BotMagics(Magics, Configurable):
             AgentModelType.CODING, self.coding_api_url, self.coding_api_key, self.coding_model_name
         )
         agent_factory.config_model(
+            AgentModelType.EVALUATING, self.evaluating_api_url, self.evaluating_api_key, self.evaluating_model_name
+        )
+        agent_factory.config_model(
             AgentModelType.REASONING, self.reasoning_api_url, self.reasoning_api_key, self.reasoning_model_name
         )
         return agent_factory
@@ -189,6 +213,9 @@ class BotMagics(Magics, Configurable):
             )
             evaluator_factory.config_model(
                 AgentModelType.CODING, self.coding_api_url, self.coding_api_key, self.coding_model_name
+            )
+            evaluator_factory.config_model(
+                AgentModelType.EVALUATING, self.evaluating_api_url, self.evaluating_api_key, self.evaluating_model_name
             )
             evaluator_factory.config_model(
                 AgentModelType.REASONING, self.reasoning_api_url, self.reasoning_api_key, self.reasoning_model_name

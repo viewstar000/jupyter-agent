@@ -240,6 +240,14 @@ class AgentCellContext(CodeCellContext):
     def set_data(self, name, value):
         setattr(self.agent_data, name, value)
 
+    def is_json_field(self, name):
+
+        return (
+            AgentData.model_fields[name]
+            and AgentData.model_fields[name].description is not None
+            and "[JSON]" in AgentData.model_fields[name].description  # type: ignore
+        )
+
     def parse_magic_argv(self):
         """解析任务单元格的magic命令参数"""
         parser = argparse.ArgumentParser()
@@ -289,7 +297,7 @@ class AgentCellContext(CodeCellContext):
                 cell_options = yaml.safe_load(cell_options)
                 for key, value in cell_options.items():
                     if self.has_data(key):
-                        if isinstance(self.get_data(key), (dict, list)) and isinstance(value, str):
+                        if self.is_json_field(key) and isinstance(value, str):
                             value = json.loads(value)
                         _D("CELL[{}] Load task option {}: {}".format(self.cell_idx, key, value))
                         self.set_data(key, value)
@@ -380,12 +388,7 @@ class AgentCellContext(CodeCellContext):
                 if key == "result" and self.type == CellType.PLANNING:
                     continue
                 if value:
-                    if (
-                        isinstance(value, (dict, list))
-                        and AgentData.model_fields[key]
-                        and AgentData.model_fields[key].description is not None
-                        and "[JSON]" in AgentData.model_fields[key].description  # type: ignore
-                    ):
+                    if isinstance(value, (dict, list)) and self.is_json_field(key):
                         value = json.dumps(value, ensure_ascii=False, indent=4)
                     cell_options[key] = value
             if cell_options:

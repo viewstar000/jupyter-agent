@@ -8,7 +8,7 @@ https://opensource.org/licenses/MIT
 from enum import Enum
 from .base import (
     BaseTaskFlow,
-    StageTransition,
+    StageNode,
     StageNext,
     TaskAction,
     TASK_STAGE_COMPLETED,
@@ -22,6 +22,7 @@ from ..bot_agents.task_structrue_summarier import TaskStructureSummaryAgent, Tas
 from ..bot_agents.task_structrue_reasoner import TaskStructureReasoningAgent, TaskStructureReasonState
 from ..bot_agents.output_task_result import OutputTaskResult
 from ..bot_agents.request_user_supply import RequestAboveUserSupplyAgent, RequestBelowUserSupplyAgent
+from ..bot_agents.prepare_next_cell import PrepareNextCell
 
 
 class TaskStage(str, Enum):
@@ -34,6 +35,7 @@ class TaskStage(str, Enum):
     DEBUGGING = "debugging"
     REASONING = "reasoning"
     SUMMARY = "summary"
+    PREPARE_NEXT = "prepare_next"
     OUTPUT_RESULT = "output_result"
     COMPLETED = TASK_STAGE_COMPLETED
     GLOBAL_FINISHED = TASK_STAGE_GLOBAL_FINISHED
@@ -43,10 +45,10 @@ class TaskExecutorFlowV3(BaseTaskFlow):
 
     START_STAGE = TaskStage.PLANNING
     STOP_STAGES = [TaskStage.COMPLETED, TaskStage.PLANNING_PAUSED, TaskStage.GLOBAL_FINISHED]
-    STAGE_TRANSITIONS = [
-        StageTransition[TaskStage, TaskPlannerState](
+    STAGE_NODES = [
+        StageNode[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING,
-            agent=TaskPlannerAgentV3,
+            agents=TaskPlannerAgentV3,
             states={
                 TaskPlannerState.CODING_PLANNED: TaskStage.CODING,
                 TaskPlannerState.REASONING_PLANNED: TaskStage.REASONING,
@@ -54,12 +56,14 @@ class TaskExecutorFlowV3(BaseTaskFlow):
                 TaskPlannerState.GLOBAL_FINISHED: TaskStage.GLOBAL_FINISHED,
             },
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.REQUEST_INFO_ABOVE, agent=RequestAboveUserSupplyAgent, next_stage=TaskStage.PLANNING_PAUSED
+        StageNode[TaskStage, None](
+            stage=TaskStage.REQUEST_INFO_ABOVE,
+            agents=RequestAboveUserSupplyAgent,
+            next_stage=TaskStage.PLANNING_PAUSED,
         ),
-        StageTransition[TaskStage, TaskPlannerState](
+        StageNode[TaskStage, TaskPlannerState](
             stage=TaskStage.PLANNING_PAUSED,
-            agent=TaskPlannerAgentV3,
+            agents=TaskPlannerAgentV3,
             states={
                 TaskPlannerState.CODING_PLANNED: TaskStage.CODING,
                 TaskPlannerState.REASONING_PLANNED: TaskStage.REASONING,
@@ -67,48 +71,49 @@ class TaskExecutorFlowV3(BaseTaskFlow):
                 TaskPlannerState.GLOBAL_FINISHED: TaskStage.COMPLETED,
             },
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.CODING, agent=TaskCodingAgent, next_stage=TaskStage.EXECUTING
-        ),
-        StageTransition[TaskStage, bool](
+        StageNode[TaskStage, None](stage=TaskStage.CODING, agents=TaskCodingAgent, next_stage=TaskStage.EXECUTING),
+        StageNode[TaskStage, bool](
             stage=TaskStage.EXECUTING,
-            agent=CodeExecutor,
+            agents=CodeExecutor,
             states={True: TaskStage.SUMMARY, False: TaskStage.DEBUGGING},
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.DEBUGGING, agent=CodeDebugerAgent, next_stage=TaskStage.EXECUTING
-        ),
-        StageTransition[TaskStage, TaskStructureReasonState](
+        StageNode[TaskStage, None](stage=TaskStage.DEBUGGING, agents=CodeDebugerAgent, next_stage=TaskStage.EXECUTING),
+        StageNode[TaskStage, TaskStructureReasonState](
             stage=TaskStage.REASONING,
-            agent=TaskStructureReasoningAgent,
+            agents=TaskStructureReasoningAgent,
             states={
                 TaskStructureReasonState.DONE: TaskStage.COMPLETED,
                 TaskStructureReasonState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
             },
         ),
-        StageTransition[TaskStage, TaskStructureSummaryState](
+        StageNode[TaskStage, TaskStructureSummaryState](
             stage=TaskStage.SUMMARY,
-            agent=TaskStructureSummaryAgent,
+            agents=TaskStructureSummaryAgent,
             states={
                 TaskStructureSummaryState.DONE: {
-                    TaskAction.DEFAULT: StageNext(stage=TaskStage.COMPLETED),
+                    TaskAction.DEFAULT: StageNext(stage=TaskStage.PREPARE_NEXT),
                     TaskAction.STOP: StageNext(stage=TaskStage.EXECUTING),
                 },
                 TaskStructureSummaryState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
             },
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.REQUEST_INFO_BELOW, agent=RequestBelowUserSupplyAgent, next_stage=TaskStage.COMPLETED
+        StageNode[TaskStage, None](
+            stage=TaskStage.PREPARE_NEXT, agents=PrepareNextCell, next_stage=TaskStage.COMPLETED
         ),
-        StageTransition[TaskStage, bool](
+        StageNode[TaskStage, None](
+            stage=TaskStage.REQUEST_INFO_BELOW,
+            agents=[PrepareNextCell, RequestBelowUserSupplyAgent],
+            next_stage=TaskStage.COMPLETED,
+        ),
+        StageNode[TaskStage, bool](
             stage=TaskStage.COMPLETED,
-            agent=CodeExecutor,
+            agents=CodeExecutor,
             states={True: TaskStage.OUTPUT_RESULT, False: TaskStage.DEBUGGING},
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.OUTPUT_RESULT, agent=OutputTaskResult, next_stage=TaskStage.COMPLETED
+        StageNode[TaskStage, None](
+            stage=TaskStage.OUTPUT_RESULT, agents=OutputTaskResult, next_stage=TaskStage.COMPLETED
         ),
-        StageTransition[TaskStage, None](
-            stage=TaskStage.GLOBAL_FINISHED, agent=OutputTaskResult, next_stage=TaskStage.GLOBAL_FINISHED
+        StageNode[TaskStage, None](
+            stage=TaskStage.GLOBAL_FINISHED, agents=OutputTaskResult, next_stage=TaskStage.GLOBAL_FINISHED
         ),
     ]

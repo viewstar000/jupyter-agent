@@ -58,4 +58,5 @@ class TaskReasoningAgent(BaseChatAgent):
     def on_reply(self, reply: str):
         assert reply, "Reply is empty"
         _M("### 任务总结\n" + reply)
+        self.task.agent_data.issue = ""
         self.task.agent_data.result = reply

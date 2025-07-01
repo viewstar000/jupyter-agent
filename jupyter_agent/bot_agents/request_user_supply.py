@@ -145,7 +145,7 @@ class RequestUserSupplyAgent(BaseChatAgent):
             return super().__call__(**kwargs)
         else:
             if get_env_capbilities().user_supply_info:
-                _M(f"**需要用户补充确认信息**，请按要求补充确认信息。")
+                _I(f"Request User Supply Info: {request_supply_infos}")
                 action = ActionRequestUserSupplyInfo(
                     source=self.__class__.__name__,
                     params=RequestUserSupplyInfoParams(title="用户需求补充确认", issues=request_supply_infos),

@@ -17,7 +17,7 @@ class BaseEvaluator(BaseChatAgent):
     """
 
     OUTPUT_FORMAT = AgentOutputFormat.JSON
-    MODEL_TYPE = AgentModelType.REASONING
+    MODEL_TYPE = AgentModelType.EVALUATING
     DISPLAY_REPLY = False
 
     def on_reply(self, reply):

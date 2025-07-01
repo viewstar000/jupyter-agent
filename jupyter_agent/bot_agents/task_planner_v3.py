@@ -146,6 +146,12 @@ class TaskPlannerAgentV3(BaseChatAgent):
 
     def on_reply(self, reply: TaskPlannerOutput):
         """执行规划逻辑"""
+        self.task.agent_data.result = ""
+        self.task.agent_data.coding_prompt = ""
+        self.task.agent_data.summary_prompt = ""
+        self.task.agent_data.important_infos = None
+        self.task.agent_data.request_above_supply_infos = None
+        self.task.agent_data.request_below_supply_infos = None
         if reply.state == TaskPlannerState.GLOBAL_FINISHED:
             _C(Markdown("全局目标已达成，任务完成！"), reply_type=ReplyType.TASK_RESULT)
             return False, reply.state
@@ -168,7 +174,6 @@ class TaskPlannerAgentV3(BaseChatAgent):
             self.task.agent_data.subject = reply.subtask_subject
             self.task.agent_data.coding_prompt = reply.subtask_coding_prompt
             self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
-            self.task.agent_data.result = ""
             return False, reply.state
         elif reply.state == TaskPlannerState.REASONING_PLANNED:
             assert reply.subtask_id, "Subtask id is empty"
@@ -182,7 +187,6 @@ class TaskPlannerAgentV3(BaseChatAgent):
             self.task.agent_data.task_id = reply.subtask_id
             self.task.agent_data.subject = reply.subtask_subject
             self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
-            self.task.agent_data.result = ""
             return False, reply.state
         else:
             raise ValueError(f"Unknown task planner state: {reply.state}")
