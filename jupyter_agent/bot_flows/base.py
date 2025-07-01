@@ -122,8 +122,10 @@ class BaseTaskFlow:
             if t.stage == stage:
                 if isinstance(t.evaluators, list):
                     return [self.evaluator_factory(e) for e in t.evaluators]
-                else:
+                elif t.evaluators is not None:
                     return [self.evaluator_factory(t.evaluators)]
+                else:
+                    return []
         return []
 
     def _get_next_stage_trans(self, stage, state, action=TaskAction.CONTINUE):

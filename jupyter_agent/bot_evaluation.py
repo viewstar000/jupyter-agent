@@ -8,6 +8,7 @@ https://opensource.org/licenses/MIT
 import os
 import time
 import json
+import random
 import argparse
 import nbformat
 
@@ -64,6 +65,8 @@ class NotebookRunner:
         input_path: str | Path,
         output_path: str | Path = "",
         evaluate_path: str | Path = "",
+        reset_output: bool = False,
+        max_cells: int = 20,
         timeout: int = -1,
         startup_timeout: int = 60,
         allow_errors: bool = False,
@@ -73,15 +76,28 @@ class NotebookRunner:
         self.input_path = Path(input_path).with_suffix(".ipynb")
         self.output_path = output_path
         self.evaluate_path = evaluate_path
+        self.reset_output = reset_output
+        self.max_cells = max_cells
         self.start_time = 0
         self.is_global_finished = False
 
+        suffix = str(int(time.time()))
         if not self.output_path:
-            self.output_path = self.input_path.parent.joinpath(f"{self.input_path.with_suffix('').name}_eval.ipynb")
+            self.output_path = self.input_path.parent.joinpath(
+                f"{self.input_path.with_suffix('').name}_{suffix}.ipynb"
+            )
         if not self.evaluate_path:
-            self.evaluate_path = self.input_path.parent.joinpath(f"{self.input_path.with_suffix('').name}_eval.jsonl")
+            self.evaluate_path = self.input_path.parent.joinpath(
+                f"{self.input_path.with_suffix('').name}_{suffix}.jsonl"
+            )
         self.output_path = Path(self.output_path).absolute()
         self.evaluate_path = Path(self.evaluate_path).absolute()
+
+        if self.reset_output:
+            if self.output_path.exists():
+                self.output_path.unlink()
+            if self.evaluate_path.exists():
+                self.evaluate_path.unlink()
 
         with self.input_path.open() as f:
             print("Opening notebook:", input_path)
@@ -121,8 +137,12 @@ class NotebookRunner:
     def handle_cell_payloads(self, cell_index, cell_payloads):
         for payload in cell_payloads:
             if payload.get("source") == "set_next_input" and payload.get("replace") is True:
-                print(f"CELL[{cell_index}] Replacing cell with set_next_input payload")
                 self.notebook.cells[cell_index].source = payload.get("text", "")
+                print(
+                    f"CELL[{cell_index}] Replacing cell with set_next_input payload",
+                    self.notebook.cells[cell_index].source[:256],
+                    "...",
+                )
 
     def handle_jupyter_agent_data(self, cell_index, cell_meta, cell_output_metas):
         cell_agent_data_timestamp = cell_meta.get("jupyter-agent-data-timestamp", 0)
@@ -187,26 +207,49 @@ class NotebookRunner:
             )
 
     def handle_set_next_cell(self, cell_index, action):
-        if action.params.index == 0:
-            self.notebook.cells[cell_index].source = action.params.source
-            self.notebook.cells[cell_index].metadata.update(action.params.metadata)
-            self.notebook.cells[cell_index].metadata["tags"] = action.params.tags
-            print(f"CELL[{cell_index}] Replacing cell with set_next_cell action")
-            return cell_index
+        metadata = dict(action.params.metadata)
+        metadata["tags"] = action.params.tags
+        if action.params.type == "code":
+            new_cell = nbformat.v4.new_code_cell(source=action.params.source, metadata=metadata)
+        elif action.params.type == "markdown":
+            new_cell = nbformat.v4.new_markdown_cell(source=action.params.source, metadata=metadata)
         else:
-            metadata = dict(action.params.metadata)
-            metadata["tags"] = action.params.tags
-            if action.params.type == "code":
-                new_cell = nbformat.v4.new_code_cell(source=action.params.source, metadata=metadata)
-            elif action.params.type == "markdown":
-                new_cell = nbformat.v4.new_markdown_cell(source=action.params.source, metadata=metadata)
-            else:
-                raise ValueError(f"Unsupported cell type: {action.params.type}")
-            insert_idx = cell_index if action.params.index == -1 else cell_index + action.params.index
-            ret_idx = cell_index + 1 if action.params.index == -1 else cell_index
+            raise ValueError(f"Unsupported cell type: {action.params.type}")
+        if action.params.index == 0:
+            self.notebook.cells[cell_index].cell_type = new_cell.cell_type
+            self.notebook.cells[cell_index].source = new_cell.source
+            self.notebook.cells[cell_index].metadata = new_cell.metadata
+            print(f"CELL[{cell_index}] Update cell with set_next_cell action", new_cell.source[:256], "...")
+            return cell_index
+        elif action.params.index > 0:
+            insert_idx = cell_index + action.params.index
             self.notebook.cells.insert(insert_idx, new_cell)
-            print(f"CELL[{cell_index}] Inserting  cell at [{insert_idx}] with set_next_cell action")
+            print(
+                f"CELL[{cell_index}] Insert cell at [{insert_idx}] with set_next_cell action",
+                new_cell.source[:256],
+                "...",
+            )
+            return cell_index
+        elif action.params.index == -1:
+            cur_cell = self.notebook.cells[cell_index]
+            if cur_cell.cell_type == "code":
+                cur_cell = nbformat.v4.new_code_cell(source=cur_cell.source, metadata=cur_cell.metadata)
+            else:
+                cur_cell = nbformat.v4.new_markdown_cell(source=cur_cell.source, metadata=cur_cell.metadata)
+            insert_idx = cell_index + action.params.index + 1
+            ret_idx = cell_index + 1
+            self.notebook.cells[cell_index].cell_type = new_cell.cell_type
+            self.notebook.cells[cell_index].source = new_cell.source
+            self.notebook.cells[cell_index].metadata = new_cell.metadata
+            self.notebook.cells.insert(ret_idx, cur_cell)
+            print(
+                f"CELL[{cell_index}] Insert cell at [{insert_idx}] and ret [{ret_idx}] with set_next_cell action",
+                new_cell.source[:256],
+                "...",
+            )
             return ret_idx
+        else:
+            raise ValueError(f"Unsupported set_next_cell index: {action.params.index}")
 
     def handle_jupyter_agent_actions(self, cell_index, cell_meta, cell_output_metas):
         cell_action_timestamp = cell_meta.get("jupyter-agent-action-timestamp", 0)
@@ -219,6 +262,7 @@ class NotebookRunner:
                     if isinstance(action, ActionSetCellContent):
                         print(f"CELL[{cell_index}] Action: {action.action} - {action.source} - {action.timestamp}")
                         cell_index = self.handle_set_next_cell(cell_index, action)
+        print(f"CELL[{cell_index}] Saving Action timestamp: {output_action_timestamp}")
         self.notebook.cells[cell_index].metadata["jupyter-agent-action-timestamp"] = output_action_timestamp
 
     def on_cell_executed(self, cell_index, cell, execute_reply):
@@ -237,6 +281,9 @@ class NotebookRunner:
         self.handle_evaluation_record(cell_index, cell_output_metas)
         self.handle_jupyter_agent_actions(cell_index, cell_meta, cell_output_metas)
         print(f"CELL[{cell_index}] Saving executed {cell_type} cell - {cell_id}")
+        if cell_index > self.max_cells:
+            print(f"CELL[{cell_index}] Reached max cells: {self.max_cells}, removing the rest...")
+            del self.notebook.cells[cell_index + 1 :]
         nbformat.write(self.notebook, self.output_path)
 
     def on_notebook_start(self, notebook):
@@ -289,6 +336,12 @@ def main():
         "-e", "--evaluate_path", type=str, default="", help="Path to save evaluate records (default: same as input)"
     )
     parser.add_argument(
+        "-R", "--reset_output", action="store_true", help="Reset output notebook before execution (default: False)"
+    )
+    parser.add_argument(
+        "-m", "--max_cells", type=int, default=20, help="Maximum number of cells to execute (default: 20)"
+    )
+    parser.add_argument(
         "--timeout", type=int, default=-1, help="Execution timeout in seconds (default: -1, no timeout)"
     )
     parser.add_argument(
@@ -313,6 +366,8 @@ def main():
         input_path=args.input_path,
         output_path=args.output_path,
         evaluate_path=args.evaluate_path,
+        reset_output=args.reset_output,
+        max_cells=args.max_cells,
         timeout=args.timeout,
         startup_timeout=args.startup_timeout,
         allow_errors=args.allow_errors,

@@ -10,7 +10,8 @@ import json
 import jinja2
 import openai
 
-
+from enum import Enum
+from pydantic import BaseModel
 from .bot_outputs import _D, _I, _W, _E, _F, _B, _M
 
 
@@ -26,7 +27,18 @@ class ChatMessages:
             )
         else:
             self.jinja_env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True)
-        self.jinja_env.filters["json"] = lambda x: json.dumps(x, indent=2, ensure_ascii=False)
+        self.jinja_env.filters["json"] = self._json
+
+    def _json(self, obj):
+
+        def _default(o):
+            if isinstance(o, BaseModel):
+                return o.model_dump()
+            if isinstance(o, Enum):
+                return o.value
+            return repr(o)
+
+        return json.dumps(obj, indent=2, ensure_ascii=False, default=_default)
 
     def add(self, content, role="user", content_type="text", tpl_context=None):
         tpl_context = tpl_context or self.contexts

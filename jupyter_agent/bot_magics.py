@@ -204,7 +204,12 @@ class BotMagics(Magics, Configurable):
 
     def get_evaluator_factory(self, nb_context):
         if self.enable_evaluating:
-            evaluator_factory = EvaluatorFactory(nb_context)
+            evaluator_factory = EvaluatorFactory(
+                nb_context,
+                display_think=self.display_think,
+                display_message=self.display_message,
+                display_response=self.display_response,
+            )
             evaluator_factory.config_model(
                 AgentModelType.DEFAULT, self.default_api_url, self.default_api_key, self.default_model_name
             )

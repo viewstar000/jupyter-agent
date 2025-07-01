@@ -67,7 +67,7 @@ class TaskExecutorFlowV3(BaseTaskFlow):
             states={
                 TaskPlannerState.CODING_PLANNED: TaskStage.CODING,
                 TaskPlannerState.REASONING_PLANNED: TaskStage.REASONING,
-                TaskPlannerState.REQUEST_INFO: TaskStage.PLANNING_PAUSED,
+                TaskPlannerState.REQUEST_INFO: TaskStage.REQUEST_INFO_ABOVE,
                 TaskPlannerState.GLOBAL_FINISHED: TaskStage.COMPLETED,
             },
         ),

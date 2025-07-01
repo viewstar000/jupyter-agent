@@ -154,11 +154,11 @@ class TaskPlannerAgentV3(BaseChatAgent):
         self.task.agent_data.request_below_supply_infos = None
         if reply.state == TaskPlannerState.GLOBAL_FINISHED:
             _C(Markdown("全局目标已达成，任务完成！"), reply_type=ReplyType.TASK_RESULT)
-            return False, reply.state
+            return reply.state
         elif reply.state == TaskPlannerState.REQUEST_INFO:
             assert reply.request_supply_infos, "Request info prompt is empty"
             self.task.agent_data.request_above_supply_infos = reply.request_supply_infos
-            return True, reply.state
+            return reply.state
         elif reply.state == TaskPlannerState.CODING_PLANNED:
             assert reply.subtask_id, "Subtask id is empty"
             assert reply.subtask_subject, "Subtask subject is empty"
@@ -174,7 +174,7 @@ class TaskPlannerAgentV3(BaseChatAgent):
             self.task.agent_data.subject = reply.subtask_subject
             self.task.agent_data.coding_prompt = reply.subtask_coding_prompt
             self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
-            return False, reply.state
+            return reply.state
         elif reply.state == TaskPlannerState.REASONING_PLANNED:
             assert reply.subtask_id, "Subtask id is empty"
             assert reply.subtask_subject, "Subtask subject is empty"
@@ -187,6 +187,6 @@ class TaskPlannerAgentV3(BaseChatAgent):
             self.task.agent_data.task_id = reply.subtask_id
             self.task.agent_data.subject = reply.subtask_subject
             self.task.agent_data.summary_prompt = reply.subtask_summary_prompt
-            return False, reply.state
+            return reply.state
         else:
             raise ValueError(f"Unknown task planner state: {reply.state}")
