@@ -155,6 +155,10 @@ bot_eval examples/data_loader_eval.ipynb
 
 当前版本的评估结果见：[docs/evaluation.md](https://github.com/viewstar000/jupyter-agent/blob/main/docs/evaluation.md)
 
+## 设计思路
+
+![docs/flow_graph.dot.png](https://github.com/viewstar000/jupyter-agent/blob/main/docs/flow_graph.dot.png)
+
 ## 贡献
 
 欢迎提交 issue 或 pull request 参与贡献。
@@ -321,6 +325,10 @@ bot_eval examples/data_loader_eval.ipynb
 ```
 
 The current evaluation results can be found in [docs/evaluation.md](https://github.com/viewstar000/jupyter-agent/blob/main/docs/evaluation.md)
+
+## Design
+
+![docs/flow_graph.dot.png](https://github.com/viewstar000/jupyter-agent/blob/main/docs/flow_graph.dot.png)
 
 ## Contributing
 
