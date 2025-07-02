@@ -287,6 +287,8 @@ class BaseTaskFlow:
                 evaluation_result.timestamp = evaluation_result.timestamp or time.time()
                 evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
                 evaluation_result.cell_index = self.task.cell_idx
+                evaluation_result.flow = type(self).__name__
+                evaluation_result.stage = str(stage)
                 evaluation_result.is_success = True
                 output_evaluation(evaluation_result)
             else:
@@ -295,6 +297,8 @@ class BaseTaskFlow:
                         timestamp=time.time(),
                         evaluator="default",
                         cell_index=self.task.cell_idx,
+                        flow=type(self).__name__,
+                        stage=str(stage),
                         is_success=True,
                     )
                 )
@@ -308,6 +312,7 @@ class BaseTaskFlow:
                 evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
                 evaluation_result.cell_index = self.task.cell_idx
                 evaluation_result.flow = type(self).__name__
+                evaluation_result.stage = str(stage)
                 evaluation_result.stage_count = stage_count
                 evaluation_result.execution_duration = flow_duration
                 evaluation_result.is_success = True
@@ -320,10 +325,25 @@ class BaseTaskFlow:
                         evaluator="default",
                         cell_index=self.task.cell_idx,
                         flow=type(self).__name__,
+                        stage=str(stage),
                         stage_count=stage_count,
                         execution_duration=flow_duration,
                         is_success=True,
                     )
                 )
+        elif stage in self.STOP_STAGES:
+            output_evaluation(
+                FlowEvaluationRecord(
+                    timestamp=time.time(),
+                    evaluator="default",
+                    cell_index=self.task.cell_idx,
+                    flow=type(self).__name__,
+                    stage=str(stage),
+                    stage_count=stage_count,
+                    execution_duration=flow_duration,
+                    is_stopped=True,
+                    is_success=False,
+                )
+            )
         flush_output()
         return stage

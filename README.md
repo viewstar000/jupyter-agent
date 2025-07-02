@@ -153,6 +153,8 @@ bot_eval [-o output_eval.ipynb] [-e output_eval.jsonl] input.ipynb
 bot_eval examples/data_loader_eval.ipynb
 ```
 
+当前版本的评估结果见：[docs/evaluation.md](https://github.com/viewstar000/jupyter-agent/blob/main/docs/evaluation.md)
+
 ## 贡献
 
 欢迎提交 issue 或 pull request 参与贡献。
@@ -317,6 +319,8 @@ For example
 ```bash
 bot_eval examples/data_loader_eval.ipynb
 ```
+
+The current evaluation results can be found in [docs/evaluation.md](https://github.com/viewstar000/jupyter-agent/blob/main/docs/evaluation.md)
 
 ## Contributing
 

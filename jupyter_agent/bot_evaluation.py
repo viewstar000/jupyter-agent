@@ -26,22 +26,15 @@ class BaseEvaluationRecord(BaseModel):
     evaluator: str = ""
     eval_type: str = "BASE"
     cell_index: int = -1
-    execution_duration: float = 0.0
-    is_success: bool = False
-    correct_score: float = 0.0
-
-
-class StageEvaluationRecord(BaseEvaluationRecord):
-    eval_type: str = "STAGE"
     flow: str = ""
     stage: str = ""
     agent: str = ""
-
-
-class FlowEvaluationRecord(BaseEvaluationRecord):
-    eval_type: str = "FLOW"
-    flow: str = ""
+    flow_count: int = 0
     stage_count: int = 0
+    execution_duration: float = 0.0
+    is_stopped: bool = False
+    is_success: bool = False
+    correct_score: float = 0.0
     planning_score: float = 0.0
     reasoning_score: float = 0.0
     coding_score: float = 0.0
@@ -49,13 +42,16 @@ class FlowEvaluationRecord(BaseEvaluationRecord):
     user_supply_score: float = 0.0
 
 
+class StageEvaluationRecord(BaseEvaluationRecord):
+    eval_type: str = "STAGE"
+
+
+class FlowEvaluationRecord(BaseEvaluationRecord):
+    eval_type: str = "FLOW"
+
+
 class NotebookEvaluationRecord(BaseEvaluationRecord):
     eval_type: str = "NOTEBOOK"
-    flow_count: int = 0
-    planning_score: float = 0.0
-    coding_score: float = 0.0
-    important_score: float = 0.0
-    user_supply_score: float = 0.0
 
 
 class NotebookRunner:
