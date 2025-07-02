@@ -157,7 +157,7 @@ bot_eval examples/data_loader_eval.ipynb
 
 ## 设计思路
 
-![docs/flow_graph.dot.png](https://github.com/viewstar000/jupyter-agent/blob/main/docs/flow_graph.dot.png)
+![docs/flow_graph.dot.png](https://raw.githubusercontent.com/viewstar000/jupyter-agent/refs/heads/main/docs/flow_graph.dot.png)
 
 ## 贡献
 
@@ -328,7 +328,7 @@ The current evaluation results can be found in [docs/evaluation.md](https://gith
 
 ## Design
 
-![docs/flow_graph.dot.png](https://github.com/viewstar000/jupyter-agent/blob/main/docs/flow_graph.dot.png)
+![docs/flow_graph.dot.png](https://raw.githubusercontent.com/viewstar000/jupyter-agent/refs/heads/main/docs/flow_graph.dot.png)
 
 ## Contributing
 
