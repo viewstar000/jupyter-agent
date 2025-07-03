@@ -31,11 +31,12 @@ from ..utils import get_env_capbilities
 MOCK_USER_REPLY_PROMPT = """\
 **角色定义**：
 
-你是一个用户需求补充专家，负责补充用户的需求信息，以便于更好的完成任务。
+你是一个用户需求补充专家，负责代替用户补充回答的需求中的问题，以便于更好的完成任务。
 
 **任务要求**：
 
-根据提示补充待确认的信息，以便于更好的完成任务。
+- 根据提示补充回答待确认的问题，以便于更好的完成任务。
+- 需要确保所有的问题都有明确的答案，以便于更好的完成任务。
 
 
 {% include "TASK_OUTPUT_FORMAT" %}
@@ -74,7 +75,7 @@ MOCK_USER_REPLY_PROMPT = """\
 
 ---
 
-需要补充确认的信息：
+需要你代替用户补充确认的问题：
 
 {% for issue in request_supply_infos %}
 - {{ issue.prompt }}, (例如: {{ issue.example }})
@@ -82,7 +83,7 @@ MOCK_USER_REPLY_PROMPT = """\
 
 ---
 
-请按要求补充上述待确认的信息：
+请按要求代替用户补充回答上述待确认的问题：
 """
 
 

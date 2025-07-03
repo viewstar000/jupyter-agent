@@ -16,50 +16,49 @@
 
 | eval_type | success | total |     rate |
 | :-------- | ------: | ----: | -------: |
-| NOTEBOOK  |       7 |    12 | 0.583333 |
-| STAGE     |     329 |   358 | 0.918994 |
-| FLOW      |      64 |    69 | 0.927536 |
+| NOTEBOOK  |       8 |    15 | 0.533333 |
+| STAGE     |     382 |   415 | 0.920482 |
+| FLOW      |      83 |    90 | 0.922222 |
 
 - NOTEBOOK: 是否完成全局目标，不考虑完成质量，只要完成全局目标即可
 - FLOW: 子任务是否成功执行，不考虑子任务完成质量，只要完成子任务是否完成所有步骤无异常即可
 - STAGE: 子任务中的单个步骤是否成功执行，不考虑子任务完成质量，只要该步骤成功执行无异常即可
 
-#### 分Stage执行成功率
+#### 分 Stage 执行成功率
 
 | flow               | stage                        | success | total |     rate |
 | :----------------- | :--------------------------- | ------: | ----: | -------: |
-| TaskExecutorFlowV3 | TaskStage.EXECUTING          |      48 |    73 | 0.657534 |
-| TaskExecutorFlowV3 | TaskStage.REASONING          |       4 |     5 |      0.8 |
-| TaskExecutorFlowV3 | planning_paused              |      12 |    14 | 0.857143 |
-| TaskExecutorFlowV3 | TaskStage.SUMMARY            |      48 |    49 | 0.979592 |
-| MasterPlannerFlow  | start                        |      12 |    12 |        1 |
-| TaskExecutorFlowV3 | TaskStage.CODING             |      53 |    53 |        1 |
-| TaskExecutorFlowV3 | TaskStage.DEBUGGING          |      20 |    20 |        1 |
-| TaskExecutorFlowV3 | TaskStage.PLANNING           |      64 |    64 |        1 |
-| TaskExecutorFlowV3 | TaskStage.PLANNING_PAUSED    |       2 |     2 |        1 |
-| TaskExecutorFlowV3 | TaskStage.PREPARE_NEXT       |      13 |    13 |        1 |
-| TaskExecutorFlowV3 | TaskStage.REQUEST_INFO_ABOVE |      14 |    14 |        1 |
-| TaskExecutorFlowV3 | TaskStage.REQUEST_INFO_BELOW |      39 |    39 |        1 |
+| TaskExecutorFlowV3 | TaskStage.EXECUTING          |      59 |    87 | 0.678161 |
+| TaskExecutorFlowV3 | TaskStage.PLANNING           |      83 |    87 | 0.954023 |
+| TaskExecutorFlowV3 | TaskStage.SUMMARY            |      59 |    60 | 0.983333 |
+| MasterPlannerFlow  | start                        |      15 |    15 |        1 |
+| TaskExecutorFlowV3 | TaskStage.CODING             |      66 |    66 |        1 |
+| TaskExecutorFlowV3 | TaskStage.DEBUGGING          |      21 |    21 |        1 |
+| TaskExecutorFlowV3 | TaskStage.PREPARE_NEXT       |      28 |    28 |        1 |
+| TaskExecutorFlowV3 | TaskStage.REASONING          |       9 |     9 |        1 |
+| TaskExecutorFlowV3 | TaskStage.REQUEST_INFO_ABOVE |       1 |     1 |        1 |
+| TaskExecutorFlowV3 | TaskStage.REQUEST_INFO_BELOW |      40 |    40 |        1 |
+| TaskExecutorFlowV3 | planning_paused              |       1 |     1 |        1 |
 
 ### 执行时长
 
 | eval_type | duration_avg | duration_std | duration_min | duration_max |
 | :-------- | -----------: | -----------: | -----------: | -----------: |
-| STAGE     |      29.4403 |      26.7122 |      1.00433 |      158.829 |
-| FLOW      |      99.3356 |      101.221 |            0 |      500.206 |
-| NOTEBOOK  |      1030.71 |      290.688 |      617.438 |      1697.06 |
+| STAGE     |      28.1425 |       27.442 |      1.00412 |      167.552 |
+| FLOW      |      102.972 |       76.965 |            0 |      373.909 |
+| NOTEBOOK  |      935.799 |       192.55 |       636.48 |      1223.69 |
 
 ### 生成质量
 
 | flow               | score_type  |      avg |       std |
 | :----------------- | :---------- | -------: | --------: |
-| MasterPlannerFlow  | correct     | 0.838889 | 0.0600925 |
-| TaskExecutorFlowV3 | correct     |     0.93 | 0.0453689 |
-| TaskExecutorFlowV3 | planning    | 0.829423 | 0.0647594 |
-| TaskExecutorFlowV3 | reasoning   | 0.859615 | 0.0955061 |
-| TaskExecutorFlowV3 | coding      | 0.734902 | 0.0445588 |
-| TaskExecutorFlowV3 | important   | 0.881373 | 0.0663029 |
-| TaskExecutorFlowV3 | user_supply | 0.785577 | 0.0628853 |
+| MasterPlannerFlow  | correct     | 0.854545 | 0.0350325 |
+| TaskExecutorFlowV3 | correct     | 0.921061 | 0.0773629 |
+| TaskExecutorFlowV3 | planning    | 0.836618 | 0.0582739 |
+| TaskExecutorFlowV3 | reasoning   | 0.874627 | 0.0624822 |
+| TaskExecutorFlowV3 | coding      | 0.739394 | 0.0410208 |
+| TaskExecutorFlowV3 | important   | 0.881667 | 0.0611325 |
+| TaskExecutorFlowV3 | user_supply | 0.784478 | 0.0558212 |
 
 - 质量评分使用评估模型（qwen3-30b-a3b）对生成的结果自动评分得到，评分越高质量越好
   - correct: 正确性评估，生成的结果是否符合当前规划的要求

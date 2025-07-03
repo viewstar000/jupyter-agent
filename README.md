@@ -1,6 +1,6 @@
 # jupyter-agent
 
-[EN](#en)
+[EN](#en) | [评估数据](https://github.com/viewstar000/jupyter-agent/blob/main/docs/evaluation.md)
 
 调用LLM实现Jupyter代码的自动生成、执行、调试等功能
 

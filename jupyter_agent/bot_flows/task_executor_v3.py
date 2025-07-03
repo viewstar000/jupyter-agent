@@ -82,7 +82,7 @@ class TaskExecutorFlowV3(BaseTaskFlow):
             stage=TaskStage.REASONING,
             agents=TaskStructureReasoningAgent,
             states={
-                TaskStructureReasonState.DONE: TaskStage.COMPLETED,
+                TaskStructureReasonState.DONE: TaskStage.PREPARE_NEXT,
                 TaskStructureReasonState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
             },
         ),
