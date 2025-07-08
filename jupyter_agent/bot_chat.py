@@ -175,10 +175,28 @@ class BotChat:
                     if ret_empty_block or content and content.strip():
                         yield {"type": "fence", "content": content, "raw": raw_content}
                 else:
-                    if display_reply and token and token.strip():
-                        _M(token)
-                    if ret_empty_block or token and token.strip():
-                        yield {"type": "text", "content": token, "raw": token}
+                    is_json_block = False
+                    if (
+                        token.strip().startswith("{")
+                        and token.strip().endswith("}")
+                        or token.strip().startswith("[")
+                        and token.strip().endswith("]")
+                    ):
+                        try:
+                            json.loads(token)
+                            _I(f"Got JSON Block from text: {repr(token)[:80]}")
+                            is_json_block = True
+                            if display_reply and token and token.strip():
+                                _B(token, title="JSON Block", format="code", code_language="json")
+                            if ret_empty_block or token and token.strip():
+                                yield {"type": "code", "lang": "json", "content": token.strip(), "raw": token}
+                        except json.JSONDecodeError:
+                            _I(f"Got non-JSON Block from text: {repr(token)[:80]}")
+                    if not is_json_block:
+                        if display_reply and token and token.strip():
+                            _M(token)
+                        if ret_empty_block or token and token.strip():
+                            yield {"type": "text", "content": token, "raw": token}
 
     def create_messages(self, contexts=None, templates=None):
         return ChatMessages(contexts=contexts, templates=templates, display_message=self.display_message)

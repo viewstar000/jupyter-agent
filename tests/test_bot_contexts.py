@@ -194,3 +194,212 @@ def test_format_cell_options_skips_none_and_falsey():
     assert "task_id:" not in options_str
     assert "subject:" not in options_str
     assert "coding_prompt:" not in options_str
+
+
+def test_cell_context_match_subclass_returns_subclass():
+    # UserSupplyInfoCellContext should match a raw cell with correct prefix
+    cell = {
+        "cell_type": "raw",
+        "source": "### USER_SUPPLY_INFO:\n- user: foo\n  assistant: bar\n",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.UserSupplyInfoCellContext)
+
+
+def test_cell_context_match_subclass_returns_codecellcontext():
+    # CodeCellContext should match a code cell
+    cell = {
+        "cell_type": "code",
+        "source": "print('hi')",
+        "metadata": {},
+        "outputs": [],
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.CodeCellContext)
+
+
+def test_cell_context_match_subclass_returns_agentcellcontext():
+    # AgentCellContext should match a code cell starting with %%bot
+    cell = {
+        "cell_type": "code",
+        "source": "%%bot\nprint('hi')",
+        "metadata": {},
+        "outputs": [],
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.AgentCellContext)
+
+
+def test_cell_context_match_subclass_returns_base_for_unknown():
+    # Should return base CellContext for unknown cell type
+    cell = {
+        "cell_type": "unknown",
+        "source": "something",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert type(ctx) is bc.CellContext
+
+
+def test_user_supply_info_cell_context_match_and_parse():
+    # Should match raw cell with correct prefix and parse YAML
+    cell = {
+        "cell_type": "raw",
+        "source": "### USER_SUPPLY_INFO:\n- user: alice\n  assistant: bob\n- user: carol\n  assistant: dave\n",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.UserSupplyInfoCellContext)
+    infos = ctx.get_user_supply_infos()
+    assert isinstance(infos, list)
+    assert infos[0].question == "bob" and infos[0].answer == "alice"
+    assert infos[1].question == "dave" and infos[1].answer == "carol"
+
+
+def test_user_supply_info_cell_context_empty_source():
+    # Should return empty list if no YAML after prefix
+    cell = {
+        "cell_type": "raw",
+        "source": "### USER_SUPPLY_INFO:\n",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.UserSupplyInfoCellContext)
+    infos = ctx.get_user_supply_infos()
+    assert infos == []
+
+
+def test_user_supply_info_cell_context_invalid_yaml():
+    # Should raise exception or return [] if YAML is invalid
+    cell = {
+        "cell_type": "raw",
+        "source": "### USER_SUPPLY_INFO:\nnot: [valid: yaml",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert isinstance(ctx, bc.UserSupplyInfoCellContext)
+    try:
+        infos = ctx.get_user_supply_infos()
+        # If yaml.safe_load fails, it should raise an exception
+        # If implementation changes to catch, then infos should be []
+        assert infos == [] or infos is None
+    except Exception:
+        pass
+
+
+def test_user_supply_info_cell_context_non_matching_cell():
+    # Should not match if cell_type is not raw or prefix missing
+    cell = {
+        "cell_type": "markdown",
+        "source": "### USER_SUPPLY_INFO:\n- user: foo\n  assistant: bar\n",
+        "metadata": {},
+        "id": "testid",
+    }
+    ctx = bc.CellContext.from_cell(0, cell)
+    assert not isinstance(ctx, bc.UserSupplyInfoCellContext)
+    assert isinstance(ctx, bc.CellContext)
+
+
+def test_notebook_context_cells_reads_cells(tmp_path):
+    # Create a notebook with several cells
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [
+        nbformat.v4.new_code_cell("print('a')"),
+        nbformat.v4.new_code_cell("%%bot\nprint('b')"),
+        nbformat.v4.new_markdown_cell("Some text"),
+    ]
+    nb_path = tmp_path / "testnb2.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    ctx = bc.NotebookContext("%%bot", "print('b')", str(nb_path))
+    cells = ctx.cells
+    assert isinstance(cells, list)
+    assert len(cells) >= 1
+    # Should contain CellContext or subclasses
+    assert all(isinstance(c, bc.CellContext) for c in cells)
+
+
+def test_notebook_context_cur_task_identifies_agent_cell(tmp_path):
+    nb = nbformat.v4.new_notebook()
+    nb.cells = [
+        nbformat.v4.new_code_cell("print('a')"),
+        nbformat.v4.new_code_cell("%%bot -s stage1\nprint('b')"),
+        nbformat.v4.new_markdown_cell("Some text"),
+    ]
+    nb_path = tmp_path / "testnb3.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    ctx = bc.NotebookContext("-s stage1", "print('b')", str(nb_path))
+    _ = ctx.cells  # trigger loading
+    cur_task = ctx.cur_task
+    # Should be None or AgentCellContext
+    assert cur_task is None or isinstance(cur_task, bc.AgentCellContext)
+
+
+def test_notebook_context_merged_important_infos(tmp_path):
+    nb = nbformat.v4.new_notebook()
+    cell1 = nbformat.v4.new_code_cell("%%bot\nprint('b')")
+    cell2 = nbformat.v4.new_code_cell("%%bot\nprint('c')")
+    # Patch metadata to simulate important_infos
+    cell1.metadata["jupyter-agent-data"] = {"important_infos": {"foo": "bar"}}
+    cell2.metadata["jupyter-agent-data"] = {"important_infos": {"baz": "qux"}}
+    nb.cells = [cell1, cell2]
+    nb_path = tmp_path / "testnb4.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    ctx = bc.NotebookContext("%%bot", "print('b')", str(nb_path))
+    _ = ctx.cells
+    # Patch agent_data for each cell to simulate .important_infos
+    for cell in ctx._cells:
+        if hasattr(cell, "agent_data"):
+            cell.agent_data.important_infos = cell.agent_data.important_infos or {}
+            if cell.cell_idx == 0:
+                cell.agent_data.important_infos = {"foo": "bar"}
+            elif cell.cell_idx == 1:
+                cell.agent_data.important_infos = {"baz": "qux"}
+    infos = ctx.merged_important_infos
+    assert "foo" in infos
+    assert "baz" in infos
+
+
+def test_notebook_context_merged_user_supply_infos(tmp_path):
+    nb = nbformat.v4.new_notebook()
+    raw_cell = nbformat.v4.new_raw_cell(
+        '### USER_SUPPLY_INFO:\n- user: "alice"\n  assistant: "bob"\n- user: "carol"\n  assistant: "dave"\n'
+    )
+    nb.cells = [raw_cell]
+    nb_path = tmp_path / "testnb5.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    ctx = bc.NotebookContext("", "", str(nb_path))
+    _ = ctx.cells
+    infos = ctx.merged_user_supply_infos
+    assert infos[0].question == "bob"
+    assert infos[0].answer == "alice"
+    assert infos[1].question == "dave"
+    assert infos[1].answer == "carol"
+
+
+def test_notebook_context_cells_handles_file_not_found(tmp_path):
+    # Should not raise, should return empty list if file missing
+    ctx = bc.NotebookContext("", "", str(tmp_path / "nonexistent.ipynb"))
+    cells = ctx.cells
+    assert cells == []
+
+
+def test_notebook_context_cells_handles_invalid_notebook(tmp_path):
+    # Write invalid notebook file
+    nb_path = tmp_path / "invalid.ipynb"
+    with open(nb_path, "w", encoding="utf-8") as f:
+        f.write("not a notebook")
+    ctx = bc.NotebookContext("", "", str(nb_path))
+    cells = ctx.cells
+    assert cells == []

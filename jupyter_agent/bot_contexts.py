@@ -16,22 +16,44 @@ import traceback
 import nbformat
 
 
-from typing import Optional
+from typing import Optional, Type
 from enum import Enum
 from pydantic import BaseModel, Field
 from IPython.core.getipython import get_ipython
 from .bot_outputs import _D, _I, _W, _E, _F, _A, ReplyType
+from .bot_actions import UserSupplyInfoReply
 from .utils import get_env_capbilities
 
 
 class CellType(str, Enum):
     CODE = "code"
     MARKDOWN = "markdown"
-    PLANNING = "planning"
     TASK = "task"
+    PLANNING = "planning"
+    USER_SUPPLY_INFO = "user_supply_info"
 
 
 class CellContext:
+
+    @classmethod
+    def _match_subclass(cls, cell: dict) -> Optional[Type["CellContext"]]:
+        for subcls in reversed(cls.__subclasses__()):
+            matched = subcls._match_subclass(cell)
+            if matched:
+                return matched
+        if cls._match_cell(cell):
+            return cls
+
+    @classmethod
+    def _match_cell(cls, cell: dict) -> bool:
+        return True
+
+    @classmethod
+    def from_cell(cls, idx: int, cell: dict) -> "CellContext":
+        cell_class = cls._match_subclass(cell)
+        if cell_class:
+            return cell_class(idx, cell)
+        return cls(idx, cell)
 
     def __init__(self, idx: int, cell: dict):
         self.cell_idx = idx
@@ -61,8 +83,33 @@ class CellContext:
     @property
     def is_task_context(self):
         return (
-            self.cell_type in (CellType.TASK, CellType.PLANNING, CellType.MARKDOWN) or "CTX_TASK" in self.cell_tags
+            self.cell_type in (CellType.TASK, CellType.PLANNING, CellType.MARKDOWN, CellType.USER_SUPPLY_INFO)
+            or "CTX_TASK" in self.cell_tags
         ) and "CTX_EXCLUDE" not in self.cell_tags
+
+
+class UserSupplyInfoCellContext(CellContext):
+
+    @classmethod
+    def _match_cell(cls, cell: dict) -> bool:
+        return cell["cell_type"] == "raw" and cell["source"].strip().startswith("### USER_SUPPLY_INFO:")
+
+    def __init__(self, idx: int, cell: dict):
+        super().__init__(idx, cell)
+        self.cell_type = CellType.USER_SUPPLY_INFO
+        self.cell_source = cell["source"].strip().split("\n", 1)[1].strip() if "\n" in cell["source"].strip() else ""
+
+    def get_user_supply_infos(self) -> list[UserSupplyInfoReply]:
+        infos = yaml.safe_load(self.cell_source) if self.cell_source else []
+        ret_infos = []
+        for info in infos:
+            ret_info = UserSupplyInfoReply(
+                question=info.get("question") or info.get("assistant"),
+                answer=info.get("answer") or info.get("user"),
+            )
+            if ret_info.question and ret_info.answer:
+                ret_infos.append(ret_info)
+        return ret_infos
 
 
 class CodeCellContext(CellContext):
@@ -71,6 +118,10 @@ class CodeCellContext(CellContext):
     max_output_size = 24 * 1024
     max_result_size = 24 * 1024
     max_error_size = 4 * 1024
+
+    @classmethod
+    def _match_cell(cls, cell: dict) -> bool:
+        return cell["cell_type"] == "code"
 
     def __init__(self, idx: int, cell: dict):
         """初始化任务单元格上下文"""
@@ -194,6 +245,10 @@ class AgentData(BaseModel):
 
 class AgentCellContext(CodeCellContext):
     """任务单元格上下文类"""
+
+    @classmethod
+    def _match_cell(cls, cell: dict) -> bool:
+        return super()._match_cell(cell) and cell["source"].strip().startswith("%%bot")
 
     def __init__(self, idx: int, cell: dict):
         """初始化任务单元格上下文"""
@@ -440,23 +495,18 @@ class NotebookContext:
                 self._cells = []
                 for idx, cell in enumerate(nb.cells):
                     _D(f"CELL[{idx}] {cell['cell_type']} {repr(cell['source'])[:80]}")
-                    if cell["cell_type"] == "code":
-                        if cell["source"].strip().startswith("%%bot"):
-                            cell_ctx = AgentCellContext(idx, cell)
-                            if (
-                                self.cur_line.strip() == cell_ctx.magic_line[len(cell_ctx.magic_name) :].strip()
-                                and self.cur_content.strip() == cell_ctx.magic_code.strip()
-                            ):
-                                if self._current_cell is None:
-                                    _I(f"CELL[{idx}] Reach current cell, RETURN!")
-                                    self._current_cell = cell_ctx
-                                else:
-                                    _I(f"CELL[{idx}] Reach current cell, SKIP!")
-                                break
+                    cell_ctx = CellContext.from_cell(idx, cell)
+                    if (
+                        isinstance(cell_ctx, AgentCellContext)
+                        and self.cur_line.strip() == cell_ctx.magic_line[len(cell_ctx.magic_name) :].strip()
+                        and self.cur_content.strip() == cell_ctx.magic_code.strip()
+                    ):
+                        if self._current_cell is None:
+                            _I(f"CELL[{idx}] Reach current cell, RETURN!")
+                            self._current_cell = cell_ctx
                         else:
-                            cell_ctx = CodeCellContext(idx, cell)
-                    else:
-                        cell_ctx = CellContext(idx, cell)
+                            _I(f"CELL[{idx}] Reach current cell, SKIP!")
+                        break
                     self._cells.append(cell_ctx)
                 self.notebook_state = os.stat(self.notebook_path).st_mtime
                 _I(f"Got {len(self._cells)} notebook cells")
@@ -472,3 +522,23 @@ class NotebookContext:
         if self._current_cell is None:
             len(self.cells)
         return self._current_cell
+
+    @property
+    def merged_important_infos(self):
+        infos = {}
+        for cell in self.cells:
+            if cell.type == CellType.TASK and cell.important_infos:
+                infos.update(cell.important_infos)
+        return infos
+
+    @property
+    def merged_user_supply_infos(self) -> list[UserSupplyInfoReply]:
+        infos = {}
+        for cell in self.cells:
+            if cell.type == CellType.USER_SUPPLY_INFO:
+                for info in cell.get_user_supply_infos():
+                    infos[info.question] = info.answer
+        ret_infos = []
+        for k, v in infos.items():
+            ret_infos.append(UserSupplyInfoReply(question=k, answer=v))
+        return ret_infos

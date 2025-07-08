@@ -31,11 +31,11 @@ def test_actionbase_and_subclasses():
     assert action.params.choices[0].value == "yes"
 
     # Test UserSupplyInfoReply and ActionReceiveUserSupplyInfo
-    reply = bot_actions.UserSupplyInfoReply(prompt="Please confirm", reply="OK")
+    reply = bot_actions.UserSupplyInfoReply(question="Please confirm", answer="OK")
     params = bot_actions.ReceiveUserSupplyInfoParams(replies=[reply])
     action = bot_actions.ActionReceiveUserSupplyInfo(action="receive_user_supply_info", params=params)
     assert action.action == "receive_user_supply_info"
-    assert action.params.replies[0].reply == "OK"
+    assert action.params.replies[0].answer == "OK"
 
 
 def test_get_action_class():
@@ -93,10 +93,10 @@ def test_get_and_close_action_dispatcher():
 
 def test_request_user_reply(monkeypatch):
     prompts = [
-        bot_actions.RequestUserSupplyInfo(prompt="What is your name?", example="Alice"),
-        bot_actions.RequestUserSupplyInfo(prompt="What is your age?", example="30"),
+        bot_actions.RequestUserSupplyInfo(question="What is your name?", example="Alice"),
+        bot_actions.RequestUserSupplyInfo(question="What is your age?", example="30"),
     ]
     monkeypatch.setattr("builtins.input", lambda prompt: "test")
     replies = bot_actions.request_user_reply(prompts)
     assert len(replies) == 2
-    assert replies[0].reply == "test"
+    assert replies[0].answer == "test"

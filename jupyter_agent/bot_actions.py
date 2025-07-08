@@ -40,9 +40,15 @@ class ReplyActionBase(ActionBase):
     reply_port: int = 0
 
 
+class CellContentType(str, Enum):
+    RAW = "raw"
+    CODE = "code"
+    MARKDOWN = "markdown"
+
+
 class SetCellContentParams(BaseModel):
     index: int = 1  # -1 previous, 0 current, 1 next
-    type: str = "code"  # code/markdown
+    type: CellContentType = CellContentType.CODE  # code/markdown
     source: str = ""
     tags: List[str] = []
     metadata: Dict[str, Any] = {}
@@ -82,16 +88,16 @@ class ActionReceiveUserConfirm(ActionBase):
 
 
 class RequestUserSupplyInfo(BaseModel):
-    prompt: str = Field(
-        description="需要用户补充详细信息的Prompt",
+    question: str = Field(
+        description="需要用户补充详细信息的问题",
         examples=["请补充与...相关的详细的信息", "请确认...是否...", "请提供..."],
     )
     example: Optional[str] = Field(None, description="示例", examples=["..."])
 
 
 class UserSupplyInfoReply(BaseModel):
-    prompt: str = Field(description="需要用户补充详细信息的Prompt", examples=["..."])
-    reply: str = Field(description="用户补充的详细信息", examples=["..."])
+    question: str = Field(description="需要用户补充详细信息的问题", examples=["..."])
+    answer: str = Field(description="用户补充的详细信息", examples=["..."])
 
 
 class RequestUserSupplyInfoParams(BaseModel):
@@ -109,8 +115,8 @@ class ReceiveUserSupplyInfoParams(BaseModel):
     replies: List[UserSupplyInfoReply] = Field(
         description="完成补充确认的信息列表",
         examples=[
-            UserSupplyInfoReply(prompt="请确认...是否...", reply="是"),
-            UserSupplyInfoReply(prompt="请补充...", reply="..."),
+            UserSupplyInfoReply(question="请确认...是否...", answer="是"),
+            UserSupplyInfoReply(question="请补充...", answer="..."),
         ],
     )
 
@@ -123,8 +129,8 @@ class ActionReceiveUserSupplyInfo(ActionBase):
 def request_user_reply(prompts: list[RequestUserSupplyInfo]) -> list[UserSupplyInfoReply]:
     responses = []
     for prompt in prompts:
-        response = input(f"{prompt.prompt} (例如: {prompt.example})")
-        responses.append(UserSupplyInfoReply(prompt=prompt.prompt, reply=response))
+        response = input(f"{prompt.question} (例如: {prompt.example})")
+        responses.append(UserSupplyInfoReply(question=prompt.question, answer=response))
     return responses
 
 

@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from jupyter_agent import bot_evaluation
+from jupyter_agent.bot_actions import CellContentType
 
 
 class DummyAction(bot_evaluation.ActionBase):
@@ -107,7 +108,9 @@ def test_handle_evaluation_record_notebook(sample_notebook, tmp_path):
 
 def test_handle_set_next_cell_replace(sample_notebook):
     runner = bot_evaluation.NotebookRunner(str(sample_notebook))
-    params = bot_evaluation.SetCellContentParams(index=0, source="replaced", metadata={}, tags=[], type="code")
+    params = bot_evaluation.SetCellContentParams(
+        index=0, source="replaced", metadata={}, tags=[], type=CellContentType.CODE
+    )
     action = bot_evaluation.ActionSetCellContent(params=params)
     idx = runner.handle_set_next_cell(0, action)
     assert runner.notebook.cells[0].source == "replaced"
@@ -116,7 +119,9 @@ def test_handle_set_next_cell_replace(sample_notebook):
 
 def test_handle_set_next_cell_insert(sample_notebook):
     runner = bot_evaluation.NotebookRunner(str(sample_notebook))
-    params = bot_evaluation.SetCellContentParams(index=1, source="inserted", metadata={}, tags=[], type="markdown")
+    params = bot_evaluation.SetCellContentParams(
+        index=1, source="inserted", metadata={}, tags=[], type=CellContentType.MARKDOWN
+    )
     action = bot_evaluation.ActionSetCellContent(params=params)
     idx = runner.handle_set_next_cell(0, action)
     assert runner.notebook.cells[1].source == "inserted"
@@ -154,3 +159,69 @@ def test_on_notebook_complete_appends_eval(tmp_path):
         with patch("nbformat.write"):
             runner.on_notebook_complete(runner.notebook)
             mock_save.assert_called_once()
+
+
+def test_handle_set_next_cell_replace_code(sample_notebook):
+    runner = bot_evaluation.NotebookRunner(str(sample_notebook))
+    params = bot_evaluation.SetCellContentParams(
+        index=0, source="print('replaced')", metadata={}, tags=["tag1"], type=CellContentType.CODE
+    )
+    action = bot_evaluation.ActionSetCellContent(params=params)
+    idx = runner.handle_set_next_cell(0, action)
+    cell = runner.notebook.cells[0]
+    assert cell.source == "print('replaced')"
+    assert cell.cell_type == "code"
+    assert cell.metadata["tags"] == ["tag1"]
+    assert idx == 0
+
+
+def test_handle_set_next_cell_replace_markdown(sample_notebook):
+    runner = bot_evaluation.NotebookRunner(str(sample_notebook))
+    params = bot_evaluation.SetCellContentParams(
+        index=0, source="**markdown**", metadata={}, tags=[], type=CellContentType.MARKDOWN
+    )
+    action = bot_evaluation.ActionSetCellContent(params=params)
+    idx = runner.handle_set_next_cell(0, action)
+    cell = runner.notebook.cells[0]
+    assert cell.source == "**markdown**"
+    assert cell.cell_type == "markdown"
+    assert idx == 0
+
+
+def test_handle_set_next_cell_insert_positive_index(sample_notebook):
+    runner = bot_evaluation.NotebookRunner(str(sample_notebook))
+    params = bot_evaluation.SetCellContentParams(
+        index=1, source="inserted cell", metadata={}, tags=["t"], type=CellContentType.RAW
+    )
+    action = bot_evaluation.ActionSetCellContent(params=params)
+    idx = runner.handle_set_next_cell(0, action)
+    assert runner.notebook.cells[1].source == "inserted cell"
+    assert runner.notebook.cells[1].cell_type == "raw"
+    assert runner.notebook.cells[1].metadata["tags"] == ["t"]
+    assert idx == 0
+
+
+def test_handle_set_next_cell_insert_negative_index(sample_notebook):
+    runner = bot_evaluation.NotebookRunner(str(sample_notebook))
+    # Add a second cell to allow index -1 logic
+    runner.notebook.cells.append(nbformat.v4.new_code_cell(source="second"))
+    params = bot_evaluation.SetCellContentParams(
+        index=-1, source="new cell", metadata={}, tags=[], type=CellContentType.MARKDOWN
+    )
+    action = bot_evaluation.ActionSetCellContent(params=params)
+    ret_idx = runner.handle_set_next_cell(0, action)
+    # After operation, cell 0 should be replaced, cell 1 should be the old cell
+    assert runner.notebook.cells[0].source == "new cell"
+    assert runner.notebook.cells[0].cell_type == "markdown"
+    assert runner.notebook.cells[1].source == "print('Hello')"
+    assert ret_idx == 1
+
+
+def test_handle_set_next_cell_unsupported_index(sample_notebook):
+    runner = bot_evaluation.NotebookRunner(str(sample_notebook))
+    params = bot_evaluation.SetCellContentParams(
+        index=-2, source="irrelevant", metadata={}, tags=[], type=CellContentType.CODE
+    )
+    action = bot_evaluation.ActionSetCellContent(params=params)
+    with pytest.raises(ValueError, match="Unsupported set_next_cell index: -2"):
+        runner.handle_set_next_cell(0, action)

@@ -36,17 +36,48 @@ _TASK_CONTEXTS = no_indent(
 
         {{ cell.result }}
 
-        {% if cell.important_infos %}
-            ### 任务结论中的重要信息(Important Infos)
+        {% if cell.important_infos and not merged_important_infos %}
+            ### 【重要】任务结论中的重要信息(Important Infos)
 
             ```json
             {{ cell.important_infos | json }}
             ```
         {%+ endif %}
+    {% elif cell.type == "user_supply_info" %}
+        {% if cell.get_user_supply_infos() and not merged_user_supply_infos %}
+            ## 【重要】用户提供的补充信息(User Supply Infos)
+
+            {% if user_supply_info_format == "markdown" %}
+                {% for info in cell.get_user_supply_infos() %}
+                    - Question: {{ info.question }}
+                    - Answer: {{ info.answer }}
+                {%+ endfor %}
+            {% else %}
+                ```json
+                {{ cell.get_user_supply_infos() | json }}
+                ```
+            {% endif %}
+        {% endif %}
     {% elif cell.is_task_context and cell.source.strip() %}
         {{ cell.source }}
     {% endif %}
 {% endfor %}
+
+{% if merged_user_supply_infos %}
+## 用户提供的补充信息(User Supply Infos)
+
+```json
+{{ merged_user_supply_infos | json }}
+```
+{% endif %}
+
+{% if merged_important_infos %}
+## 已完成的任务生成的重要信息(Important Infos)
+
+```json
+{{ merged_important_infos | json }}
+```
+{% endif %}
 """
 )
 
@@ -179,6 +210,8 @@ class BaseChatAgent(BotChat, BaseAgent):
         contexts = {
             "cells": self.cells,
             "task": self.task,
+            "merged_important_infos": None,
+            "merged_user_supply_infos": None,
             "OUTPUT_FORMAT": self.OUTPUT_FORMAT,
             "OUTPUT_CODE_LANG": self.OUTPUT_CODE_LANG,
         }

@@ -26,6 +26,8 @@ class DummyNotebookContext:
                 "context": "",
             }
         ]
+        self.merged_important_infos = []
+        self.merged_user_supply_infos = []
 
 
 class DummyBotChat:

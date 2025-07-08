@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyter-agent"
-version = "2025.7.103"
+version = "2025.7.104"
 description = "调用LLM实现Jupyter代码的自动生成、执行、调试等功能"
 authors = [
     { name="viewstar000" }

@@ -209,6 +209,8 @@ class NotebookRunner:
             new_cell = nbformat.v4.new_code_cell(source=action.params.source, metadata=metadata)
         elif action.params.type == "markdown":
             new_cell = nbformat.v4.new_markdown_cell(source=action.params.source, metadata=metadata)
+        elif action.params.type == "raw":
+            new_cell = nbformat.v4.new_raw_cell(source=action.params.source, metadata=metadata)
         else:
             raise ValueError(f"Unsupported cell type: {action.params.type}")
         if action.params.index == 0:
