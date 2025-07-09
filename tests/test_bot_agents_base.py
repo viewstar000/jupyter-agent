@@ -97,8 +97,8 @@ def test_base_chat_agent_prepare_contexts(base_chat_agent):
     ctx = base_chat_agent.prepare_contexts(extra="value")
     assert "cells" in ctx
     assert "task" in ctx
-    assert ctx["OUTPUT_FORMAT"] == AgentOutputFormat.RAW
-    assert ctx["OUTPUT_CODE_LANG"] == "python"
+    assert ctx["output_format"] == AgentOutputFormat.RAW
+    assert ctx["output_code_lang"] == "python"
     assert ctx["extra"] == "value"
 
 

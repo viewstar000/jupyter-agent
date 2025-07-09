@@ -19,7 +19,7 @@ from ..bot_agents.task_coder import TaskCodingAgent
 from ..bot_agents.task_debuger import CodeDebugerAgent
 from ..bot_agents.task_code_executor import CodeExecutor
 from ..bot_agents.task_structrue_summarier import TaskStructureSummaryAgent, TaskStructureSummaryState
-from ..bot_agents.task_structrue_reasoner import TaskStructureReasoningAgent, TaskStructureReasonState
+from ..bot_agents.task_structrue_reasoner import TaskStructureReasoningAgent
 from ..bot_agents.output_task_result import OutputTaskResult
 from ..bot_agents.request_user_supply import RequestAboveUserSupplyAgent, RequestBelowUserSupplyAgent
 from ..bot_agents.prepare_next_cell import PrepareNextCell
@@ -78,12 +78,12 @@ class TaskExecutorFlowV3(BaseTaskFlow):
             states={True: TaskStage.SUMMARY, False: TaskStage.DEBUGGING},
         ),
         StageNode[TaskStage, None](stage=TaskStage.DEBUGGING, agents=CodeDebugerAgent, next_stage=TaskStage.EXECUTING),
-        StageNode[TaskStage, TaskStructureReasonState](
+        StageNode[TaskStage, TaskStructureSummaryState](
             stage=TaskStage.REASONING,
             agents=TaskStructureReasoningAgent,
             states={
-                TaskStructureReasonState.DONE: TaskStage.PREPARE_NEXT,
-                TaskStructureReasonState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
+                TaskStructureSummaryState.DONE: TaskStage.PREPARE_NEXT,
+                TaskStructureSummaryState.REQUEST_INFO: TaskStage.REQUEST_INFO_BELOW,
             },
         ),
         StageNode[TaskStage, TaskStructureSummaryState](

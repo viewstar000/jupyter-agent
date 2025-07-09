@@ -9,7 +9,7 @@ from IPython.display import Markdown
 from .base import BaseChatAgent, AgentModelType
 from ..bot_outputs import _C, ReplyType
 
-MASTER_PLANNER_PROMPT = """\
+MASTER_PLANNER_PROMPT = """
 **角色定义**：
 
 你是一个高级分析规划专家，擅长将自然语言任务拆解为可执行的Jupyter Notebook分析流程。
@@ -37,7 +37,7 @@ MASTER_PLANNER_PROMPT = """\
 class MasterPlannerAgent(BaseChatAgent):
     """全局规划器代理类"""
 
-    PROMPT = MASTER_PLANNER_PROMPT
+    PROMPT_TPL = MASTER_PLANNER_PROMPT
     DISPLAY_REPLY = False
     MODEL_TYPE = AgentModelType.PLANNER
 

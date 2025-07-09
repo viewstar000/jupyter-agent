@@ -10,19 +10,13 @@ import json
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat
-from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _M, _B, _C, _O, markdown_block
-from ..bot_actions import RequestUserSupplyInfo
+from .task_structrue_summarier import TaskStructureSummaryState, TaskStructureSummaryOutput
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
 
 
-TASK_REASONER_PROMPT = """\
-**角色定义**：
-
-你是一个推理分析与信息提炼专家，能够从已有的数据、结果中推理分析并提取出关键结论。
-
-**任务要求**：
-
+PROMPT_ROLE = "你是一个推理分析与信息提炼专家，能够从已有的数据、结果中推理分析并提取出关键结论。"
+PROMPT_RULES = """
 - 在已有的数据、结果中进行推理分析，按需提取关键结论，并将结论输出为**人类可读的总结**
 - 包含以下内容：
   1. 核心发现（如"Electronics类别月均增长12%"）
@@ -33,70 +27,26 @@ TASK_REASONER_PROMPT = """\
 
 注：任务代码执行的结果不会记录在全局上下文中，只有任务总结的结果会记录在全局上下文中，
 因此任务总结中应包含对代码执行结果的简要说明，以便后续子任务使用。
-
-{% include "TASK_OUTPUT_FORMAT" %}
-
----
-
-{% include "TASK_CONTEXTS" %}
-
----
-
-{% include "CODE_CONTEXTS" %}
-
----
-
-**当前子任务信息**:
-
-### 当前子任务目标：
-{{ task.subject }}
-
-### 当前任务总结要求：
-{{ task.summary_prompt }}
-
----
-
-请按要求输出任务结论：
 """
-
-
-class TaskStructureReasonState(str, Enum):
-    DONE = "done"
-    REQUEST_INFO = "request_info"
-
-
-class TaskStructureReasonOutput(BaseModel):
-
-    summary: str = Field(description=f"任务总结的详细描述", examples=["..."])
-    important_infos: Optional[Dict[str, Any]] = Field(
-        None,
-        description="任务总结中的重要信息，特别是需要后续子任务重点关注的信息。"
-        "注意：该字段仅支持结构化信息，不能使用代码、长文本等非结构化信息",
-        examples=[
-            {
-                "..._constraint": "...",
-                "..._expression": "...",
-                "..._patterns": ["...", "..."],
-                "..._execution_strategies": ["...", "..."],
-                "..._features": {"...": "...", "...": "..."},
-                "..._mapping_rules": {"...": "...", "...": "..."},
-                "...": "...",
-            }
-        ],
-    )
-    request_confirm_infos: Optional[List[RequestUserSupplyInfo]] = Field(
-        None, description="需要用户补充确认的信息，问题应尽量简单，只需要用户回答是/否或在备选项中选择即可"
-    )
+PROMPT_TRIGGER = "请按要求输出任务结论："
 
 
 class TaskStructureReasoningAgent(BaseChatAgent):
 
-    PROMPT = TASK_REASONER_PROMPT
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
+    PROMPT_TRIGGER = PROMPT_TRIGGER
     OUTPUT_FORMAT = AgentOutputFormat.JSON
-    OUTPUT_JSON_SCHEMA = TaskStructureReasonOutput
+    OUTPUT_JSON_SCHEMA = TaskStructureSummaryOutput
     DISPLAY_REPLY = True
 
-    def on_reply(self, reply: TaskStructureReasonOutput):
+    def get_task_data(self):
+        return {
+            "subject": self.task.subject,
+            "summary_prompt": self.task.summary_prompt,
+        }
+
+    def on_reply(self, reply: TaskStructureSummaryOutput):
         assert reply.summary, "Reply is empty"
         _M("### 任务总结\n\n" + reply.summary)
         self.task.agent_data.issue = ""
@@ -113,5 +63,5 @@ class TaskStructureReasoningAgent(BaseChatAgent):
             )
         if reply.request_confirm_infos:
             self.task.agent_data.request_below_supply_infos = reply.request_confirm_infos
-            return TaskStructureReasonState.REQUEST_INFO
-        return TaskStructureReasonState.DONE
+            return TaskStructureSummaryState.REQUEST_INFO
+        return TaskStructureSummaryState.DONE

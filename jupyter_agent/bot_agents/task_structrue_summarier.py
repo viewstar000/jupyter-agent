@@ -10,18 +10,13 @@ import json
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat
-from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _M, _B, _C, _O, markdown_block
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
 from ..bot_actions import RequestUserSupplyInfo
 
-TASK_SUMMARY_PROMPT = """\
-**角色定义**：
 
-你是一个信息提炼专家，能够从分析结果中提取关键结论。
-
-**任务要求**：
-
+PROMPT_ROLE = "你是一个信息提炼专家，能够从分析结果中提取关键结论。"
+PROMPT_RULES = """
 - 将代码执行的输出与结果转化为**人类可读的总结**
 - 包含以下内容：
   1. 代码执行结果总结
@@ -33,42 +28,8 @@ TASK_SUMMARY_PROMPT = """\
 
 注：任务代码执行的结果不会记录在全局上下文中，只有任务总结的结果会记录在全局上下文中，
 因此任务总结中应包含对代码执行结果的简要说明，以便后续子任务使用。
-
-{% include "TASK_OUTPUT_FORMAT" %}
-
----
-
-{% include "TASK_CONTEXTS" %}
-
----
-
-{% include "CODE_CONTEXTS" %}
-
----
-
-**当前子任务信息**:
-
-### 当前子任务目标：
-{{ task.subject }}
-
-### 当前子任务代码需求：
-{{ task.coding_prompt }}
-
-### 当前代码：
-```python
-{{ task.source }}
-```
-
-### 当前代码执行的输出与结果：
-{{ task.output }}
-
-### 当前任务总结要求：
-{{ task.summary_prompt }}
-
----
-
-请按要求输出任务总结：
 """
+PROMPT_TRIGGER = "请按要求输出任务总结："
 
 
 class TaskStructureSummaryState(str, Enum):
@@ -102,10 +63,21 @@ class TaskStructureSummaryOutput(BaseModel):
 
 class TaskStructureSummaryAgent(BaseChatAgent):
 
-    PROMPT = TASK_SUMMARY_PROMPT
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
+    PROMPT_TRIGGER = PROMPT_TRIGGER
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskStructureSummaryOutput
     DISPLAY_REPLY = True
+
+    def get_task_data(self):
+        return {
+            "subject": self.task.subject,
+            "coding_prompt": self.task.coding_prompt,
+            "source": self.task.source,
+            "output": self.task.output,
+            "summary_prompt": self.task.summary_prompt,
+        }
 
     def on_reply(self, reply: TaskStructureSummaryOutput):
         assert reply.summary, "Reply is empty"

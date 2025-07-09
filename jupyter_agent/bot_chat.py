@@ -209,7 +209,6 @@ class BotChat:
         display_reply=True,
         max_tokens=32 * 1024,
         max_completion_tokens=4 * 1024,
-        temperature=0.8,
         n=1,
         **kwargs,
     ):
@@ -225,7 +224,6 @@ class BotChat:
             messages=messages,
             max_tokens=max_tokens,
             max_completion_tokens=max_completion_tokens,
-            temperature=temperature,
             n=n,
             **kwargs,
         )

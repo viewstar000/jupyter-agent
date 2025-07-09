@@ -11,7 +11,7 @@ import datetime
 from IPython.display import Markdown
 from .base import BaseAgent
 from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O, ReplyType, markdown_block
-from ..bot_actions import get_action_dispatcher, ActionSetCellContent, SetCellContentParams
+from ..bot_actions import get_action_dispatcher, ActionSetCellContent, SetCellContentParams, CellContentType
 from ..utils import get_env_capbilities
 
 
@@ -26,7 +26,7 @@ class PrepareNextCell(BaseAgent):
                     source=self.__class__.__name__,
                     params=SetCellContentParams(
                         index=1,
-                        type="code",
+                        type=CellContentType.CODE,
                         source=(
                             "%%bot\n\n"
                             "# Execute this cell to generate the next task\n"

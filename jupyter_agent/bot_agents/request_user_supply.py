@@ -12,6 +12,7 @@ import json
 
 from enum import Enum
 from typing import List, Optional, Dict, Any, Tuple
+from collections import OrderedDict
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat
@@ -29,63 +30,20 @@ from ..bot_actions import (
 )
 from ..utils import get_env_capbilities
 
-MOCK_USER_REPLY_PROMPT = """\
-**角色定义**：
 
-你是一个用户需求补充专家，负责代替用户补充回答的需求中的问题，以便于更好的完成任务。
-
-**任务要求**：
-
+PROMPT_ROLE = "你是一个用户需求补充专家，负责代替用户补充回答的需求中的问题，以便于更好的完成任务。"
+PROMPT_RULES = """
 - 根据提示补充回答待确认的问题，以便于更好的完成任务。
 - 需要确保所有的问题都有明确的答案，以便于更好的完成任务。
 - 若问题可能有多种可能的答案，需要选择最合适的答案，以便于更好的完成任务。
-
-
-{% include "TASK_OUTPUT_FORMAT" %}
-
----
-
-{% include "TASK_CONTEXTS" %}
-
----
-
-{% include "CODE_CONTEXTS" %}
-
----
-
-**当前子任务信息**:
-
-### 当前子任务目标：
-{{ task.subject }}
-
-### 当前子任务代码需求：
-{{ task.coding_prompt }}
-
-### 当前代码：
-```python
-{{ task.source }}
-```
-
-### 当前代码执行的输出与结果：
-{{ task.output }}
-
-### 当前任务总结要求：
-{{ task.summary_prompt }}
-
-### 当前任务总结结果：
-{{ task.result }}
-
----
-
-需要你代替用户补充确认的问题：
+"""
+PROMPT_TRIGGER = "请按要求代替用户补充回答上述待确认的问题："
+PROMPT_QUESTIONS = """
+**需要你代替用户补充确认的问题**:
 
 {% for issue in request_supply_infos %}
 - {{ issue.question }}, (例如: {{ issue.example }})
 {% endfor %}
-
----
-
-请按要求代替用户补充回答上述待确认的问题：
 """
 
 
@@ -126,41 +84,22 @@ def format_received_info_yaml(
     return result
 
 
-def format_request_info_markdown(
-    issues: list[RequestUserSupplyInfo], title="用户补充确认信息", use_markdown_block=True
-) -> str:
-    result = f"### {title}\n\n"
-    result += "\n".join(
-        [f"- **Assistant**: {prompt.question} (例如: {prompt.example})\n- **User Reply**: " for prompt in issues]
-    )
-    if use_markdown_block:
-        result = f"```markdown\n{result}\n```\n"
-    return result
-
-
-def format_received_info_markdown(
-    replies: list[UserSupplyInfoReply], title="用户补充确认信息", use_markdown_block=True
-) -> str:
-    result = f"### {title}\n\n"
-    result += "\n".join([f"- **Assistant**: {reply.question}\n- **User Reply**: {reply.answer}" for reply in replies])
-    if use_markdown_block:
-        result = f"```markdown\n{result}\n```\n"
-    return result
-
-
-new_cell_content_type = CellContentType.RAW
-format_received_user_supply_info = format_received_info_yaml
-format_request_user_supply_info = format_request_info_yaml
-
-
 class RequestUserSupplyAgent(BaseChatAgent):
 
-    PROMPT = MOCK_USER_REPLY_PROMPT
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
+    PROMPT_TRIGGER = PROMPT_TRIGGER
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = ReceiveUserSupplyInfoParams
     DISPLAY_REPLY = True
     MOCK_USER_SUPPLY: bool = False
     WHERE_USER_SUPPLY = "below"  # "above" or "below"
+
+    def get_prompt_blocks(self) -> OrderedDict:
+        blocks = super().get_prompt_blocks()
+        blocks["QUESTIONS"] = PROMPT_QUESTIONS
+        blocks.move_to_end("TASK_TRIGGER")
+        return blocks
 
     def on_reply(self, reply: ReceiveUserSupplyInfoParams):
         assert reply, "Reply is empty"
@@ -170,14 +109,14 @@ class RequestUserSupplyAgent(BaseChatAgent):
                 source=self.__class__.__name__,
                 params=SetCellContentParams(
                     index=insert_cell_idx,
-                    type=new_cell_content_type,
-                    source=format_received_user_supply_info(reply.replies, use_code_block=False),
+                    type=CellContentType.RAW,
+                    source=format_received_info_yaml(reply.replies, use_code_block=False),
                 ),
             )
             get_action_dispatcher().send_action(action, need_reply=False)
         else:
             _M("### 用户补充确认的信息\n\n请将下面的内容保存到单独的单元格中，以便于更好的完成任务\n\n")
-            _M(format_received_user_supply_info(reply.replies))
+            _M(format_received_info_yaml(reply.replies))
 
     def __call__(self, **kwargs) -> Tuple[bool, Any]:
         request_supply_infos = (
@@ -209,8 +148,8 @@ class RequestUserSupplyAgent(BaseChatAgent):
                     source=self.__class__.__name__,
                     params=SetCellContentParams(
                         index=insert_cell_idx,
-                        type=new_cell_content_type,
-                        source=format_request_user_supply_info(request_supply_infos, use_code_block=False),
+                        type=CellContentType.RAW,
+                        source=format_request_info_yaml(request_supply_infos, use_code_block=False),
                     ),
                 )
                 get_action_dispatcher().send_action(action, need_reply=False)
@@ -219,7 +158,7 @@ class RequestUserSupplyAgent(BaseChatAgent):
                     "### 需要补充确认的信息\n\n"
                     "请将下面的内容保存到单独的单元格中并将其补充完整，以便于更好的完成任务\n\n"
                 )
-                _M(format_request_user_supply_info(request_supply_infos))
+                _M(format_request_info_yaml(request_supply_infos))
             return False, None
 
 

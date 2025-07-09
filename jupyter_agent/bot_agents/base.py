@@ -9,7 +9,8 @@ import json
 import importlib
 import traceback
 
-from typing import Tuple, Any
+from collections import OrderedDict
+from typing import Tuple, Any, Optional, Type
 from enum import Enum, unique
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
@@ -21,8 +22,9 @@ _TASK_CONTEXTS = no_indent(
     """
 **全局任务规划及子任务完成情况**：
 
-{% for cell in cells %}
-    {% if cell.type == "planning" and cell.source.strip() %}
+{%+ for cell in cells %}
+    {% if cell.type == "planning" and cell.source.strip() +%}
+
         {{ cell.source }}
         {{ cell.result }}
     {% elif cell.type == "task" and cell.subject.strip() %}
@@ -78,6 +80,7 @@ _TASK_CONTEXTS = no_indent(
 {{ merged_important_infos | json }}
 ```
 {% endif %}
+
 """
 )
 
@@ -99,14 +102,24 @@ _CODE_CONTEXTS = no_indent(
     {% endif %}
 {%+ endfor %}
 ```
+
 """
 )
 
-_TASK_OUTPUT_FORMAT = """
-{% if OUTPUT_FORMAT == "code" %}
+
+_TASK_AGENT = """
+**角色定义**：
+
+{{ agent_role }}
+
+**任务要求**：
+
+{{ task_rules }}
+
+{% if output_format == "code" %}
 **输出格式**：
 
-输出{{ OUTPUT_CODE_LANG }}代码块，以Markdown格式显示，使用```{{ OUTPUT_CODE_LANG }}...```包裹。
+输出{{ output_code_lang }}代码块，以Markdown格式显示，使用```{{ output_code_lang }}...```包裹。
 
 示例代码：
 
@@ -118,31 +131,108 @@ def xxx(xxx):
 xxx(...)
 ```
 
-{% elif OUTPUT_FORMAT == "json" %}
+{% elif output_format == "json" %}
 **输出格式**：
 
-输出JSON格式数据，以Markdown格式显示，使用```json...```包裹。
+输出结果为JSON数据，以Markdown文档形式输出，使用```json...```包裹。
 
-数据符合JSON Schema：
+输出结果必须符合如下JSON Schema的约束：
 
 ```json
-{{ OUTPUT_JSON_SCHEMA }}
+{{ output_json_schema }}
 ```
 
-数据示例:
+输出结果示例:
 
 ```json
-{{ OUTPUT_JSON_EXAMPLE }}
+{{ output_json_example }}
 ```
 
 {% endif %}
 """
 
-PREDEFINE_PROMPT_BLOCKS = {
-    "TASK_CONTEXTS": _TASK_CONTEXTS,
-    "CODE_CONTEXTS": _CODE_CONTEXTS,
-    "TASK_OUTPUT_FORMAT": _TASK_OUTPUT_FORMAT,
-}
+_TASK_DATA = no_indent(
+    """
+{% if task and task.subject %}
+    **当前子任务信息**:
+
+    ### 当前子任务规划目标：
+    {{ task.subject }}
+
+    {% if task.coding_prompt %}
+        ### 当前子任务代码需求：
+        {{ task.coding_prompt }}
+
+        {% if task.source %}
+            ### 当前子任务生成的代码：
+            ```python
+            {{ task.source }}
+            ```
+
+            {% if task.output %}
+            ### 当前代码执行的输出与结果：
+            {{ task.output }}
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+    {% if task.summary_prompt %}
+        ### 当前子任务总结要求：
+        {{ task.summary_prompt }}
+
+        {% if task.result %}
+            ### 当前子任务输出的分析总结后的最终结果：
+            ```markdown
+            {{ task.result }}
+            ```
+
+            {% if task.important_infos %}
+            ### 当前子任务输出的重要信息：
+            ```json
+            {{ task.important_infos | json }}
+            ```
+            {% endif %}
+
+            {% if task.request_below_supply_infos %}
+            ### 当前子任务输出的请求用户补充确认的信息：
+            ```json
+            {{ task.request_below_supply_infos | json }}
+            ```
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+    {% if task.issue %}
+        ### 当前子任务存在的问题）
+        {{ task.issue }}
+    {% endif %}
+{% endif %}
+"""
+)
+
+_TASK_TRIGGER = """
+{{ task_trigger }}
+"""
+
+PREDEFINE_PROMPT_BLOCKS = OrderedDict(
+    TASK_CONTEXTS=_TASK_CONTEXTS,
+    CODE_CONTEXTS=_CODE_CONTEXTS,
+    TASK_DATA=_TASK_DATA,
+    TASK_AGENT=_TASK_AGENT,
+    TASK_TRIGGER=_TASK_TRIGGER,
+)
+
+
+_DEFAULT_AGENT_PROMPT_TPL = """\
+{% for block in blocks %}
+{% include block %}
+{% if not loop.last %}
+
+---
+
+{% endif %}
+{% endfor %}
+"""
 
 
 @unique
@@ -191,29 +281,54 @@ class BaseAgent:
 class BaseChatAgent(BotChat, BaseAgent):
     """基础聊天代理类"""
 
-    PROMPT = "You are a helpful assistant. {{ prompt }}\n\nAnswer:"
-    OUTPUT_FORMAT = AgentOutputFormat.RAW
+    PROMPT_TPL = _DEFAULT_AGENT_PROMPT_TPL
+    PROMPT_ROLE = "You are a helpful assistant. "
+    PROMPT_RULES = "Help the user to complete the task."
+    PROMPT_TRIGGER = "Now start the task:"
+    OUTPUT_FORMAT: AgentOutputFormat = AgentOutputFormat.RAW
     OUTPUT_CODE_LANG = "python"
-    OUTPUT_JSON_SCHEMA = None  # Pydantic Model
+    OUTPUT_JSON_SCHEMA: Optional[Type[BaseModel]] = None
     DISPLAY_REPLY = True
-    COMBINE_REPLY = AgentCombineReply.MERGE
+    COMBINE_REPLY: AgentCombineReply = AgentCombineReply.MERGE
     ACCEPT_EMPYT_REPLY = False
     REPLY_ERROR_RETRIES = 1
-    MODEL_TYPE = AgentModelType.REASONING
+    MODEL_TYPE: AgentModelType = AgentModelType.DEFAULT
 
     def __init__(self, notebook_context, **chat_kwargs):
         """初始化基础任务代理"""
         BaseAgent.__init__(self, notebook_context)
         BotChat.__init__(self, **chat_kwargs)
 
+    def get_prompt_tpl(self):
+        return self.PROMPT_TPL
+
+    def get_prompt_blocks(self) -> OrderedDict:
+        return PREDEFINE_PROMPT_BLOCKS.copy()
+
+    def get_role_prompt(self):
+        return self.PROMPT_ROLE
+
+    def get_rules_prompt(self):
+        return self.PROMPT_RULES
+
+    def get_trigger_prompt(self):
+        return self.PROMPT_TRIGGER
+
+    def get_task_data(self):
+        return self.task
+
     def prepare_contexts(self, **kwargs):
         contexts = {
+            "blocks": self.get_prompt_blocks().keys(),
             "cells": self.cells,
-            "task": self.task,
-            "merged_important_infos": None,
-            "merged_user_supply_infos": None,
-            "OUTPUT_FORMAT": self.OUTPUT_FORMAT,
-            "OUTPUT_CODE_LANG": self.OUTPUT_CODE_LANG,
+            "task": self.get_task_data(),
+            "merged_important_infos": None,  # self.notebook_context.merged_important_infos,
+            "merged_user_supply_infos": None,  # self.notebook_context.merged_user_supply_infos,
+            "agent_role": self.get_role_prompt(),
+            "task_rules": self.get_rules_prompt(),
+            "task_trigger": self.get_trigger_prompt(),
+            "output_format": self.OUTPUT_FORMAT,
+            "output_code_lang": self.OUTPUT_CODE_LANG,
         }
         if self.OUTPUT_JSON_SCHEMA:
             json_schema = self.OUTPUT_JSON_SCHEMA.model_json_schema()
@@ -233,14 +348,14 @@ class BaseChatAgent(BotChat, BaseAgent):
                     return o.value
                 return repr(o)
 
-            contexts["OUTPUT_JSON_SCHEMA"] = json.dumps(json_schema, indent=2, ensure_ascii=False, default=_default)
-            contexts["OUTPUT_JSON_EXAMPLE"] = json.dumps(json_example, indent=2, ensure_ascii=False, default=_default)
+            contexts["output_json_schema"] = json.dumps(json_schema, indent=2, ensure_ascii=False, default=_default)
+            contexts["output_json_example"] = json.dumps(json_example, indent=2, ensure_ascii=False, default=_default)
         contexts.update(kwargs)
         return contexts
 
     def create_messages(self, contexts):
-        messages = super().create_messages(contexts, templates=PREDEFINE_PROMPT_BLOCKS)
-        messages.add(self.PROMPT)
+        messages = super().create_messages(contexts, templates=self.get_prompt_blocks())
+        messages.add(self.get_prompt_tpl())
         return messages
 
     def combine_raw_replies(self, replies):

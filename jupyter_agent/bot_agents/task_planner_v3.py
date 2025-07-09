@@ -14,14 +14,11 @@ from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _A, _O, _C, _M, _B
 from ..bot_actions import RequestUserSupplyInfo
 
 
-TASK_PLANNER_PROMPT = """\
-**角色定义**：
-
-你是一个任务规划专家，负责根据全局目标规划，需要将一个复杂的Jupyter Notebook编程任务分解成若干步骤(Cell子任务)，
-并逐步推进子任务的执行。
-
-**任务要求**：
-
+PROMPT_ROLE = (
+    "你是一个任务规划专家，负责根据全局目标规划，"
+    "将一个复杂的Jupyter Notebook编程任务分解成若干步骤(Cell子任务)，并逐步推进子任务的执行。"
+)
+PROMPT_RULES = """
 - 审查全局目标与已完成的cell子任务的结果，判断是否已实现整体目标，若全局目标已达成，终止流程并输出最终结果。
 - 若全局目标未达成，请根据全局目标规划和已完成的cell子任务，制定下一个**Cell子任务**的执行计划，包括：
   - 首先拆解出Cell子任务的工作描述，包括子任务目标、输入与输出约束等
@@ -46,44 +43,6 @@ TASK_PLANNER_PROMPT = """\
   - 在引用已完成的子任务的结果时，特别是important_infos中的信息，要保证准确、清晰、完整，不要出现任何误导信息
   - 对于用户已补充确认的信息，特别是user_supply_infos中的信息，要充分利用，不要出现任何遗漏、冲突、误导、反复确认的情况
   - 子任务代码执行的结果不会记录在全局上下文中，只有LLM直接推理或LLM分析总结的结果会记录在全局上下文中以支持后续子任务的执行
-
-
-{% include "TASK_OUTPUT_FORMAT" %}
-
----
-
-{% include "TASK_CONTEXTS" %}
-
----
-
-{% include "CODE_CONTEXTS" %}
-
----
-
-{% if task.subject and task.issue %}
-**当前子任务信息**:
-
-### 当前子任务目标：
-{{ task.subject }}
-
-### 当前子任务代码：
-```python
-{{ task.source }}
-```
-
-### 当前子任务输出：
-{{ task.output }}
-
-### 当前子任务存在的问题：
-{{ task.issue }}
-
----
-
-请参考上述信息重新规划当前子任务：
-{% else %}
-请按要求规划下一个子任务：
-{% endif %}
-
 """
 
 
@@ -140,10 +99,29 @@ class TaskPlannerOutput(BaseModel):
 class TaskPlannerAgentV3(BaseChatAgent):
     """任务规划器代理类"""
 
-    PROMPT = TASK_PLANNER_PROMPT
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskPlannerOutput
     MODEL_TYPE = AgentModelType.PLANNER
+
+    def get_task_data(self):
+        if self.task.subject and self.task.issue:
+            return {
+                "subject": self.task.subject,
+                "issue": self.task.issue,
+                "coding_prompt": self.task.coding_prompt,
+                "source": self.task.source,
+                "output": self.task.output,
+            }
+        else:
+            return {}
+
+    def get_trigger_prompt(self):
+        if self.task.subject and self.task.issue:
+            return "请参考上述信息重新规划当前子任务："
+        else:
+            return "请按要求规划下一个子任务："
 
     def on_reply(self, reply: TaskPlannerOutput):
         """执行规划逻辑"""
