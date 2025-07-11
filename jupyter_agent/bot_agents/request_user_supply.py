@@ -98,7 +98,7 @@ def filter_special_chars(text):
 def format_request_info_yaml(
     issues: list[RequestUserSupplyInfo], title="用户补充确认信息", use_code_block=True
 ) -> str:
-    result = f"### USER_SUPPLY_INFO: {title}\n\n"
+    result = f"### USER_SUPPLY_INFO: {title}[YAML]\n\n"
     result += "\n".join(
         [
             f'- assistant: "{filter_special_chars(prompt.question)} (例如: {filter_special_chars(prompt.example)})"\n'
@@ -114,7 +114,7 @@ def format_request_info_yaml(
 def format_received_info_yaml(
     replies: list[UserSupplyInfoReply], title="用户补充确认信息", use_code_block=True
 ) -> str:
-    result = f"### USER_SUPPLY_INFO: {title}\n\n"
+    result = f"### USER_SUPPLY_INFO: {title}[YAML]\n\n"
     result += "\n".join(
         [
             f'- assistant: "{filter_special_chars(reply.question)}"\n  user: "{filter_special_chars(reply.answer)}"'
@@ -123,6 +123,32 @@ def format_received_info_yaml(
     )
     if use_code_block:
         result = f"```yaml\n{result}\n```\n"
+    return result
+
+
+def format_request_info_json(infos: list[RequestUserSupplyInfo], title="用户补充确认信息", use_code_block=True) -> str:
+    result = f"### USER_SUPPLY_INFO: {title}[JSON]\n\n"
+    result += json.dumps(
+        [{"question": f"{info.question} (例如: {info.example})", "answer": ""} for info in infos],
+        indent=4,
+        ensure_ascii=False,
+    )
+    if use_code_block:
+        result = f"```json\n{result}\n```\n"
+    return result
+
+
+def format_received_info_json(
+    replies: list[UserSupplyInfoReply], title="用户补充确认信息", use_code_block=True
+) -> str:
+    result = f"### USER_SUPPLY_INFO: {title}[JSON]\n\n"
+    result += json.dumps(
+        [{"question": f"{reply.question}", "answer": f"{reply.answer}"} for reply in replies],
+        indent=4,
+        ensure_ascii=False,
+    )
+    if use_code_block:
+        result = f"```json\n{result}\n```\n"
     return result
 
 
@@ -149,13 +175,13 @@ def format_received_info_markdown(
 
 
 new_cell_content_type = CellContentType.RAW
-format_received_user_supply_info = format_received_info_yaml
-format_request_user_supply_info = format_request_info_yaml
+format_received_user_supply_info = format_received_info_json
+format_request_user_supply_info = format_request_info_json
 
 
 class RequestUserSupplyAgent(BaseChatAgent):
 
-    PROMPT = MOCK_USER_REPLY_PROMPT
+    PROMPT_TPL = MOCK_USER_REPLY_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = ReceiveUserSupplyInfoParams
     DISPLAY_REPLY = True

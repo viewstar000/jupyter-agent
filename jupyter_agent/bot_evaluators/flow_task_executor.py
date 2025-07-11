@@ -135,7 +135,7 @@ class FlowTaskExecEvaluator(BaseEvaluator):
     任务规划评估器
     """
 
-    PROMPT = FLOW_TASK_EXEC_EVAL_PROMPT
+    PROMPT_TPL = FLOW_TASK_EXEC_EVAL_PROMPT
     OUTPUT_JSON_SCHEMA = FlowTaskExecEvalResult
 
     def on_reply(self, reply):

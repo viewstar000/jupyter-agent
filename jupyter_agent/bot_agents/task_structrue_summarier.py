@@ -102,7 +102,7 @@ class TaskStructureSummaryOutput(BaseModel):
 
 class TaskStructureSummaryAgent(BaseChatAgent):
 
-    PROMPT = TASK_SUMMARY_PROMPT
+    PROMPT_TPL = TASK_SUMMARY_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskStructureSummaryOutput
     DISPLAY_REPLY = True

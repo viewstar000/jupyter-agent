@@ -37,7 +37,7 @@ MASTER_PLANNER_PROMPT = """\
 class MasterPlannerAgent(BaseChatAgent):
     """全局规划器代理类"""
 
-    PROMPT = MASTER_PLANNER_PROMPT
+    PROMPT_TPL = MASTER_PLANNER_PROMPT
     DISPLAY_REPLY = False
     MODEL_TYPE = AgentModelType.PLANNER
 

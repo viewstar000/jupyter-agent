@@ -58,7 +58,7 @@ TASK_DEBUGGER_PROMPT = """\
 
 class CodeDebugerAgent(BaseChatAgent):
 
-    PROMPT = TASK_DEBUGGER_PROMPT
+    PROMPT_TPL = TASK_DEBUGGER_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.CODE
     OUTPUT_CODE_LANG = "python"
     MODEL_TYPE = AgentModelType.CODING

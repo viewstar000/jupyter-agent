@@ -62,7 +62,7 @@ TASK_CODING_PROMPT = """\
 
 class CodeGeneratorAgent(BaseChatAgent):
 
-    PROMPT = TASK_CODING_PROMPT
+    PROMPT_TPL = TASK_CODING_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.CODE
     OUTPUT_CODE_LANG = "python"
     MODEL_TYPE = AgentModelType.CODING

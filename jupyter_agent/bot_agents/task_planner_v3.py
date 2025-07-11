@@ -140,7 +140,7 @@ class TaskPlannerOutput(BaseModel):
 class TaskPlannerAgentV3(BaseChatAgent):
     """任务规划器代理类"""
 
-    PROMPT = TASK_PLANNER_PROMPT
+    PROMPT_TPL = TASK_PLANNER_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskPlannerOutput
     MODEL_TYPE = AgentModelType.PLANNER

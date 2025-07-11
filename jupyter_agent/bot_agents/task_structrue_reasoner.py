@@ -62,7 +62,7 @@ TASK_REASONER_PROMPT = """\
 
 class TaskStructureReasoningAgent(BaseChatAgent):
 
-    PROMPT = TASK_REASONER_PROMPT
+    PROMPT_TPL = TASK_REASONER_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = TaskStructureSummaryOutput
     DISPLAY_REPLY = True

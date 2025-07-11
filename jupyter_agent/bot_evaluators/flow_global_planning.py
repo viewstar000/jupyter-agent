@@ -76,7 +76,7 @@ class FlowGlobalPlanningEvaluator(BaseEvaluator):
     任务规划评估器
     """
 
-    PROMPT = FLOW_GLOBAL_PLANNING_EVAL_PROMPT
+    PROMPT_TPL = FLOW_GLOBAL_PLANNING_EVAL_PROMPT
     OUTPUT_JSON_SCHEMA = EvaluationResult
 
     def on_reply(self, reply):

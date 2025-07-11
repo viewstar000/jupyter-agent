@@ -9,7 +9,8 @@ import json
 import importlib
 import traceback
 
-from typing import Tuple, Any
+from collections import OrderedDict
+from typing import Tuple, Any, Optional, Type
 from enum import Enum, unique
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
@@ -17,12 +18,172 @@ from ..bot_outputs import _C, _O, _W, _T, flush_output
 from ..bot_chat import BotChat
 from ..utils import no_indent
 
+_CELL_CONTEXTS = no_indent(
+    """
+**以下是当前Notebook的执行情况:**
+
+注：
+
+- `# %% Cell[n]` 代表第 `n` 个 cell
+- `# %% [markdown] Cell[n]` 代表第 `n` 个 cell，并且该 cell 的内容为markdown文本
+
+```python
+{%+ for cell in cells +%}
+
+# -----------------------------------------------------------------------------
+{% if cell.type == "planning" and cell.source.strip() %}
+    # %% [markdown] Cell[{{ cell.cell_idx }}]
+    {% for line in cell.source.split('\n') %}
+        # {{ line }}
+    {% endfor %}
+    {% for line in cell.result.split('\n') %}
+        # {{ line }}
+    {% endfor %}
+{% elif cell.type == "task" and cell.subject.strip() %}
+    # %% Cell[{{ cell.cell_idx }}]
+    # Task ID: {{ cell.task_id }}
+    # Task Subject:
+    {% for line in cell.subject.split('\n') %}
+        #   {{ line }}
+    {% endfor %}
+    {% if cell.coding_prompt and cell.coding_prompt.strip() %}
+        # Task Coding Prompt:
+        {% for line in cell.coding_prompt.split('\n') %}
+            #   {{ line }}
+        {% endfor %}
+        {% if cell.source and cell.source.strip() %}
+            # Task Source Code:
+            {{ cell.source }}
+        {% endif %}
+    {% endif %}
+    {% if cell.summary_prompt and cell.summary_prompt.strip() %}
+        # Task Summary Prompt:
+        {% for line in cell.summary_prompt.split('\n') %}
+            #   {{ line }}
+        {% endfor %}
+        {% if cell.result and cell.result.strip() %}
+            # Task Summary Result:
+            {% for line in cell.result.split('\n') %}
+                #   {{ line }}
+            {% endfor %}
+        {% endif %}
+    {% endif %}
+    {% if cell.important_infos and not merged_important_infos %}
+        # Important Infos:
+        # {{ cell.important_infos }}
+    {% endif %}
+{% elif cell.type == "user_supply_info" and cell.get_user_supply_infos() %}
+    # %% [markdown] Cell[{{ cell.cell_idx }}]
+    # User Supply Infos:
+    {% for info in cell.get_user_supply_infos() %}
+        # - Question: {{ info.question }}
+        #   Answer: {{ info.answer }}
+    {% endfor %}
+{% elif cell.type == "markdown" and cell.source.strip() and (cell.is_code_context or cell.is_task_context) %}
+    # %% [markdown] Cell[{{ cell.cell_idx }}]
+    {% for line in cell.source.split('\n') %}
+        # {{ line }}
+    {% endfor %}
+{% elif cell.type == "code" and cell.source.strip() and (cell.is_code_context or cell.is_task_context) %}
+    # %% Cell[{{ cell.cell_idx }}]
+    {{ cell.source }}
+{% else %}
+    # %% Cell[{{ cell.cell_idx }}] Ignored
+{% endif %}
+{% endfor +%}
+
+{% if task and task.subject %}
+    # -----------------------------------------------------------------------------
+    # %% Cell[{{task.cell_idx}}]
+    # Task ID: {{ task.task_id }}
+    # Task Subject:
+    {% for line in task.subject.split('\n') %}
+        # - {{ line }}
+    {% endfor %}
+    {% if task.coding_prompt %}
+        # Task Coding Prompt:
+        {% for line in task.coding_prompt.split('\n') %}
+            # - {{ line }}
+        {% endfor %}
+    {% endif %}
+    {% if task.issue %}
+        # Task Known Issue(Please avoid these issues when coding):
+        {% for line in task.issue.split('\n') %}
+            # - {{ line }}    
+        {% endfor %}
+    {% endif %}
+    {% if task.coding_prompt %}
+        {% if not task.source %}
+            # Task Source Code(Please Complete the Code):
+        {% elif not task.summary_prompt %}
+            # Task Source Code(Need to be Fixed):
+            {{ task.source }}
+        {% else %}
+            # Task Source Code:
+            {{ task.source }}
+        {% endif %}
+    {% endif %}
+    {% if task.summary_prompt %}
+        # Task Summary Prompt:
+        {% for line in task.summary_prompt.split('\n') %}
+            #   {{ line }}
+        {% endfor %}
+        {% if not task.result %}
+            # Task Summary Result(Please Complete the Result):
+        {% else %}
+            # Task Summary Result:
+            {% for line in task.result.split('\n') %}
+                #   {{ line }}
+            {% endfor %}
+        {% endif %}
+        {% if task.important_infos and not merged_important_infos %}
+            # Important Infos:
+            # {{ task.important_infos }}
+        {% endif %}
+    {% endif %}
+{% endif %}
+```
+
+{% if task and task.subject %}
+    ---
+    {% if task.output +%}
+        **Output** of Cell[{{task.cell_idx}}]:
+        ```text
+        {{ task.output }}
+        ```
+    {%+ endif %}
+
+    {% if task.cell_error +%}
+        **Error** of Cell[{{task.cell_idx}}]:
+        ```error
+        {{ task.cell_error }}
+        ```
+    {%+ endif %}
+
+    {% if task.request_above_supply_infos +%}
+        **Request User Supply Infos** before Cell[{{task.cell_idx}}]:
+        {% for info in task.request_above_supply_infos %}
+            - Question: {{ info.question }}
+        {% endfor %}
+    {%+ endif %}
+
+    {% if task.request_below_supply_infos +%}
+        **Request User Supply Infos** after Cell[{{task.cell_idx}}]:
+        {% for info in task.request_below_supply_infos %}
+            - Question: {{ info.question }}
+        {% endfor %}
+    {%+ endif %}
+{% endif %}
+"""
+)
+
 _TASK_CONTEXTS = no_indent(
     """
 **全局任务规划及子任务完成情况**：
 
-{% for cell in cells %}
-    {% if cell.type == "planning" and cell.source.strip() %}
+{%+ for cell in cells %}
+    {% if cell.type == "planning" and cell.source.strip() +%}
+
         {{ cell.source }}
         {{ cell.result }}
     {% elif cell.type == "task" and cell.subject.strip() %}
@@ -78,9 +239,9 @@ _TASK_CONTEXTS = no_indent(
 {{ merged_important_infos | json }}
 ```
 {% endif %}
+
 """
 )
-
 
 _CODE_CONTEXTS = no_indent(
     """
@@ -99,50 +260,141 @@ _CODE_CONTEXTS = no_indent(
     {% endif %}
 {%+ endfor %}
 ```
+
 """
 )
 
 _TASK_OUTPUT_FORMAT = """
-{% if OUTPUT_FORMAT == "code" %}
+{% if output_format == "code" %}
 **输出格式**：
 
-输出{{ OUTPUT_CODE_LANG }}代码块，以Markdown格式显示，使用```{{ OUTPUT_CODE_LANG }}...```包裹。
+输出{{ output_code_lang }}代码块，以Markdown格式显示，使用```{{ output_code_lang }}...```包裹。
 
 示例代码：
 
 ```python
-def xxx(xxx):
-    ...
-    return xxx
+import pandas as pd  # 显式导入依赖
 
-xxx(...)
+def preprocess_data(data):
+    # 使用均值填充缺失值
+    cleaned_data = data.fillna(data.mean())
+    ...
+    return cleaned_data
+
+# 示例调用
+processed_df = preprocess_data(important_infos['raw_sales'])
+print(processed_df.head())
 ```
 
-{% elif OUTPUT_FORMAT == "json" %}
+{% elif output_format == "json" %}
 **输出格式**：
 
-输出JSON格式数据，以Markdown格式显示，使用```json...```包裹。
+输出结果为JSON数据，以Markdown文档形式输出，使用```json...```包裹。
 
-数据符合JSON Schema：
+输出结果必须符合如下JSON Schema的约束：
 
 ```json
-{{ OUTPUT_JSON_SCHEMA }}
+{{ output_json_schema }}
 ```
 
-数据示例:
+输出结果示例:
 
 ```json
-{{ OUTPUT_JSON_EXAMPLE }}
+{{ output_json_example }}
 ```
 
 {% endif %}
 """
 
-PREDEFINE_PROMPT_BLOCKS = {
-    "TASK_CONTEXTS": _TASK_CONTEXTS,
-    "CODE_CONTEXTS": _CODE_CONTEXTS,
-    "TASK_OUTPUT_FORMAT": _TASK_OUTPUT_FORMAT,
-}
+_TASK_AGENT = """
+**角色定义**：
+
+{{ agent_role }}
+
+**任务要求**：
+
+{{ task_rules }}
+
+{% include "TASK_OUTPUT_FORMAT" %}
+"""
+
+_TASK_DATA = no_indent(
+    """
+{% if task and task.subject %}
+    **当前子任务信息**:
+
+    ### 当前子任务规划目标：
+    {{ task.subject }}
+
+    {% if task.coding_prompt %}
+        ### 当前子任务代码需求：
+        {{ task.coding_prompt }}
+
+        {% if task.source %}
+            ### 当前子任务生成的代码：
+            ```python
+            {{ task.source }}
+            ```
+
+            {% if task.output %}
+                ### 当前代码执行的输出与结果：
+                {{ task.output }}
+            {% endif %}
+            {% if task.cell_error %}
+                ### 当前代码执行的错误信息：
+                {{ task.cell_error }}
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+    {% if task.summary_prompt %}
+        ### 当前子任务总结要求：
+        {{ task.summary_prompt }}
+
+        {% if task.result %}
+            ### 当前子任务输出的分析总结后的最终结果：
+            ```markdown
+            {{ task.result }}
+            ```
+
+            {% if task.important_infos %}
+            ### 当前子任务输出的重要信息：
+            ```json
+            {{ task.important_infos | json }}
+            ```
+            {% endif %}
+
+            {% if task.request_below_supply_infos %}
+            ### 当前子任务输出的请求用户补充确认的信息：
+            ```json
+            {{ task.request_below_supply_infos | json }}
+            ```
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+    {% if task.issue %}
+        ### 当前子任务存在的问题）
+        {{ task.issue }}
+    {% endif %}
+{% endif %}
+"""
+)
+
+_TASK_TRIGGER = """
+{{ task_trigger }}
+"""
+
+_DEFAULT_PROMPT_TPL = """\
+{% for block in blocks %}
+{% include block %}
+{% if not loop.last %}
+
+---
+
+{% endif %}
+{% endfor %}
+"""
 
 
 @unique
@@ -191,29 +443,77 @@ class BaseAgent:
 class BaseChatAgent(BotChat, BaseAgent):
     """基础聊天代理类"""
 
-    PROMPT = "You are a helpful assistant. {{ prompt }}\n\nAnswer:"
-    OUTPUT_FORMAT = AgentOutputFormat.RAW
+    PROMPT_TPL = _DEFAULT_PROMPT_TPL
+    PROMPT_SYSTEM = _TASK_AGENT
+    PROMPT_ROLE = "You are a helpful assistant. "
+    PROMPT_RULES = "Help the user to complete the task."
+    PROMPT_TRIGGER = ""
+    USE_SYSTEM_PROMPT = False
+    BLOCK_INCLUDES: Optional[list[str]] = None
+    OUTPUT_FORMAT: AgentOutputFormat = AgentOutputFormat.RAW
     OUTPUT_CODE_LANG = "python"
-    OUTPUT_JSON_SCHEMA = None  # Pydantic Model
+    OUTPUT_JSON_SCHEMA: Optional[Type[BaseModel]] = None
     DISPLAY_REPLY = True
-    COMBINE_REPLY = AgentCombineReply.MERGE
+    COMBINE_REPLY: AgentCombineReply = AgentCombineReply.MERGE
     ACCEPT_EMPYT_REPLY = False
     REPLY_ERROR_RETRIES = 1
-    MODEL_TYPE = AgentModelType.REASONING
+    MODEL_TYPE: AgentModelType = AgentModelType.DEFAULT
 
     def __init__(self, notebook_context, **chat_kwargs):
         """初始化基础任务代理"""
         BaseAgent.__init__(self, notebook_context)
         BotChat.__init__(self, **chat_kwargs)
 
+    def get_prompt_tpl(self):
+        return self.PROMPT_TPL
+
+    def get_prompt_system(self):
+        return self.PROMPT_SYSTEM
+
+    def get_role_prompt(self):
+        return self.PROMPT_ROLE
+
+    def get_rules_prompt(self):
+        return self.PROMPT_RULES
+
+    def get_trigger_prompt(self):
+        return self.PROMPT_TRIGGER
+
+    def get_task_data(self):
+        return self.task
+
+    def get_block_includes(self):
+        if self.BLOCK_INCLUDES:
+            return self.BLOCK_INCLUDES
+        elif self.USE_SYSTEM_PROMPT:
+            return ["TASK_AGENT", "TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_TRIGGER"]
+        else:
+            return ["TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_TRIGGER"]
+
+    def get_prompt_blocks(self) -> OrderedDict:
+
+        return OrderedDict(
+            CELL_CONTEXTS=_CELL_CONTEXTS,
+            TASK_CONTEXTS=_TASK_CONTEXTS,
+            CODE_CONTEXTS=_CODE_CONTEXTS,
+            TASK_OUTPUT_FORMAT=_TASK_OUTPUT_FORMAT,
+            TASK_AGENT=_TASK_AGENT,
+            TASK_DATA=_TASK_DATA,
+            TASK_TRIGGER=_TASK_TRIGGER,
+        )
+
     def prepare_contexts(self, **kwargs):
         contexts = {
+            "blocks": self.get_block_includes(),
             "cells": self.cells,
-            "task": self.task,
-            "merged_important_infos": None,
-            "merged_user_supply_infos": None,
-            "OUTPUT_FORMAT": self.OUTPUT_FORMAT,
-            "OUTPUT_CODE_LANG": self.OUTPUT_CODE_LANG,
+            "task": self.get_task_data(),
+            "merged_important_infos": None,  # self.notebook_context.merged_important_infos,
+            "merged_user_supply_infos": None,  # self.notebook_context.merged_user_supply_infos,
+            "agent_role": self.get_role_prompt(),
+            "task_rules": self.get_rules_prompt(),
+            "task_trigger": self.get_trigger_prompt(),
+            "output_format": self.OUTPUT_FORMAT,
+            "output_code_lang": self.OUTPUT_CODE_LANG,
         }
         if self.OUTPUT_JSON_SCHEMA:
             json_schema = self.OUTPUT_JSON_SCHEMA.model_json_schema()
@@ -233,14 +533,16 @@ class BaseChatAgent(BotChat, BaseAgent):
                     return o.value
                 return repr(o)
 
-            contexts["OUTPUT_JSON_SCHEMA"] = json.dumps(json_schema, indent=2, ensure_ascii=False, default=_default)
-            contexts["OUTPUT_JSON_EXAMPLE"] = json.dumps(json_example, indent=2, ensure_ascii=False, default=_default)
+            contexts["output_json_schema"] = json.dumps(json_schema, indent=2, ensure_ascii=False, default=_default)
+            contexts["output_json_example"] = json.dumps(json_example, indent=2, ensure_ascii=False, default=_default)
         contexts.update(kwargs)
         return contexts
 
     def create_messages(self, contexts):
-        messages = super().create_messages(contexts, templates=PREDEFINE_PROMPT_BLOCKS)
-        messages.add(self.PROMPT)
+        messages = super().create_messages(contexts, templates=self.get_prompt_blocks())
+        if self.USE_SYSTEM_PROMPT:
+            messages.add(self.get_prompt_system(), role="system")
+        messages.add(self.get_prompt_tpl())
         return messages
 
     def combine_raw_replies(self, replies):
