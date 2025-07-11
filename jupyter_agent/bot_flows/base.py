@@ -173,13 +173,14 @@ class BaseTaskFlow:
         ns = self._get_next_stage_trans(stage, state, action)
         return ns.stage
 
-    def __call__(self, stage, max_tries=5, stage_continue=True, stage_confirm=True):
+    def __call__(self, start_stage, max_tries=5, stage_continue=True, stage_confirm=True):
 
         n_tries = 0
         flow_duration = 0.0
         stage_count = 0
         # Initialize the task stage
-        stage = stage or self.START_STAGE
+        start_stage_name = start_stage.value if isinstance(start_stage, Enum) else start_stage
+        stage = start_stage or self.START_STAGE
         agent = None
         while n_tries <= max_tries:
             stage_st = time.time()
@@ -201,38 +202,39 @@ class BaseTaskFlow:
             stage_duration = time.time() - stage_st
             flow_duration += stage_duration
             _I(f"Stage `{stage}` completed in {stage_duration:.2f} seconds with state `{state}` and failed `{failed}`")
-            if evaluators := self.get_stage_evaluators(stage):
-                for evaluator in evaluators:
-                    # If the agent has evaluators, run them
-                    try:
-                        _I(f"Evaluating stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
-                        evaluation_result = evaluator()
-                        evaluation_result.timestamp = evaluation_result.timestamp or time.time()
-                        evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
-                        evaluation_result.cell_index = self.task.cell_idx
-                        evaluation_result.flow = type(self).__name__
-                        evaluation_result.stage = str(stage)
-                        evaluation_result.agent = type(agent).__name__
-                        evaluation_result.execution_duration = stage_duration
-                        evaluation_result.is_success = not failed
-                        output_evaluation(evaluation_result)
-                    except Exception as e:
-                        _W(f"Error during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
-                        _M(f"**Error** during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
-                        _M(f"```python\n{traceback.format_exc()}\n```")
-            else:
-                output_evaluation(
-                    StageEvaluationRecord(
-                        timestamp=time.time(),
-                        evaluator="default",
-                        cell_index=self.task.cell_idx,
-                        flow=type(self).__name__,
-                        stage=str(stage),
-                        agent=type(agent).__name__,
-                        execution_duration=stage_duration,
-                        is_success=not failed,
+            if start_stage_name != TASK_STAGE_COMPLETED:
+                if evaluators := self.get_stage_evaluators(stage):
+                    for evaluator in evaluators:
+                        # If the agent has evaluators, run them
+                        try:
+                            _I(f"Evaluating stage `{stage}` with evaluator `{type(evaluator).__name__}` ...")
+                            evaluation_result = evaluator()
+                            evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                            evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                            evaluation_result.cell_index = self.task.cell_idx
+                            evaluation_result.flow = type(self).__name__
+                            evaluation_result.stage = str(stage)
+                            evaluation_result.agent = type(agent).__name__
+                            evaluation_result.execution_duration = stage_duration
+                            evaluation_result.is_success = not failed
+                            output_evaluation(evaluation_result)
+                        except Exception as e:
+                            _W(f"Error during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
+                            _M(f"**Error** during task evaluation stage `{stage}`: `{type(e)}`: `{e}`")
+                            _M(f"```python\n{traceback.format_exc()}\n```")
+                else:
+                    output_evaluation(
+                        StageEvaluationRecord(
+                            timestamp=time.time(),
+                            evaluator="default",
+                            cell_index=self.task.cell_idx,
+                            flow=type(self).__name__,
+                            stage=str(stage),
+                            agent=type(agent).__name__,
+                            execution_duration=stage_duration,
+                            is_success=not failed,
+                        )
                     )
-                )
 
             if state != TASK_AGENT_STATE_ERROR:
                 # Agent did not fail, check if we have reached the final stage
@@ -277,48 +279,62 @@ class BaseTaskFlow:
             if not stage_continue:
                 break
         # Finalize the task execution
-        stage_name = stage.value if isinstance(stage, Enum) else stage
-        if stage_name == TASK_STAGE_GLOBAL_FINISHED:
-            _M("Task execution **finished** globally.")
-            if self.evaluator_factory is not None and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
-                evaluator = self.evaluator_factory(self.GLOBAL_EVALUATOR)
-                _I(f"Evaluating notebook with evaluator `{type(evaluator).__name__}` ...")
-                evaluation_result = evaluator()
-                evaluation_result.timestamp = evaluation_result.timestamp or time.time()
-                evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
-                evaluation_result.cell_index = self.task.cell_idx
-                evaluation_result.flow = type(self).__name__
-                evaluation_result.stage = str(stage)
-                evaluation_result.is_success = True
-                output_evaluation(evaluation_result)
-            else:
-                output_evaluation(
-                    NotebookEvaluationRecord(
-                        timestamp=time.time(),
-                        evaluator="default",
-                        cell_index=self.task.cell_idx,
-                        flow=type(self).__name__,
-                        stage=str(stage),
-                        is_success=True,
+        if start_stage_name != TASK_STAGE_COMPLETED:
+            stage_name = stage.value if isinstance(stage, Enum) else stage
+            if stage_name == TASK_STAGE_GLOBAL_FINISHED:
+                _M("Task execution **finished** globally.")
+                if self.evaluator_factory is not None and hasattr(self, "GLOBAL_EVALUATOR") and self.GLOBAL_EVALUATOR:
+                    evaluator = self.evaluator_factory(self.GLOBAL_EVALUATOR)
+                    _I(f"Evaluating notebook with evaluator `{type(evaluator).__name__}` ...")
+                    evaluation_result = evaluator()
+                    evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                    evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                    evaluation_result.cell_index = self.task.cell_idx
+                    evaluation_result.flow = type(self).__name__
+                    evaluation_result.stage = str(stage)
+                    evaluation_result.is_success = True
+                    output_evaluation(evaluation_result)
+                else:
+                    output_evaluation(
+                        NotebookEvaluationRecord(
+                            timestamp=time.time(),
+                            evaluator="default",
+                            cell_index=self.task.cell_idx,
+                            flow=type(self).__name__,
+                            stage=str(stage),
+                            is_success=True,
+                        )
                     )
-                )
-        elif stage_name == TASK_STAGE_COMPLETED:
-            _I(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
-            if self.evaluator_factory is not None and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
-                evaluator = self.evaluator_factory(self.FLOW_EVALUATOR)
-                _I(f"Evaluating flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
-                evaluation_result = evaluator()
-                evaluation_result.timestamp = evaluation_result.timestamp or time.time()
-                evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
-                evaluation_result.cell_index = self.task.cell_idx
-                evaluation_result.flow = type(self).__name__
-                evaluation_result.stage = str(stage)
-                evaluation_result.stage_count = stage_count
-                evaluation_result.execution_duration = flow_duration
-                evaluation_result.is_success = True
-                output_evaluation(evaluation_result)
-            else:
-                # If no evaluator, just output the evaluation record
+            elif stage_name == TASK_STAGE_COMPLETED:
+                _I(f"Task execution **completed** in {flow_duration:.2f} seconds with {stage_count} stages.")
+                if self.evaluator_factory is not None and hasattr(self, "FLOW_EVALUATOR") and self.FLOW_EVALUATOR:
+                    evaluator = self.evaluator_factory(self.FLOW_EVALUATOR)
+                    _I(f"Evaluating flow `{type(self).__name__}` with evaluator `{type(evaluator).__name__}` ...")
+                    evaluation_result = evaluator()
+                    evaluation_result.timestamp = evaluation_result.timestamp or time.time()
+                    evaluation_result.evaluator = evaluation_result.evaluator or type(evaluator).__name__
+                    evaluation_result.cell_index = self.task.cell_idx
+                    evaluation_result.flow = type(self).__name__
+                    evaluation_result.stage = str(stage)
+                    evaluation_result.stage_count = stage_count
+                    evaluation_result.execution_duration = flow_duration
+                    evaluation_result.is_success = True
+                    output_evaluation(evaluation_result)
+                else:
+                    # If no evaluator, just output the evaluation record
+                    output_evaluation(
+                        FlowEvaluationRecord(
+                            timestamp=time.time(),
+                            evaluator="default",
+                            cell_index=self.task.cell_idx,
+                            flow=type(self).__name__,
+                            stage=str(stage),
+                            stage_count=stage_count,
+                            execution_duration=flow_duration,
+                            is_success=True,
+                        )
+                    )
+            elif stage in self.STOP_STAGES:
                 output_evaluation(
                     FlowEvaluationRecord(
                         timestamp=time.time(),
@@ -328,22 +344,9 @@ class BaseTaskFlow:
                         stage=str(stage),
                         stage_count=stage_count,
                         execution_duration=flow_duration,
-                        is_success=True,
+                        is_stopped=True,
+                        is_success=False,
                     )
                 )
-        elif stage in self.STOP_STAGES:
-            output_evaluation(
-                FlowEvaluationRecord(
-                    timestamp=time.time(),
-                    evaluator="default",
-                    cell_index=self.task.cell_idx,
-                    flow=type(self).__name__,
-                    stage=str(stage),
-                    stage_count=stage_count,
-                    execution_duration=flow_duration,
-                    is_stopped=True,
-                    is_success=False,
-                )
-            )
         flush_output()
         return stage
