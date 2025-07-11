@@ -60,7 +60,7 @@ TASK_CODING_PROMPT = """\
 """
 
 
-class TaskCodingAgent(BaseChatAgent):
+class CodeGeneratorAgent(BaseChatAgent):
 
     PROMPT = TASK_CODING_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.CODE

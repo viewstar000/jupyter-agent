@@ -12,8 +12,8 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from IPython.display import Markdown
 from .base import BaseChatAgent, AgentOutputFormat
-from ..bot_outputs import ReplyType, _D, _I, _W, _E, _F, _M, _B, _C, _O, markdown_block
-from ..bot_actions import RequestUserSupplyInfo
+from .task_structrue_summarier import TaskStructureSummaryState, TaskStructureSummaryOutput
+from ..bot_outputs import _D, _I, _W, _E, _F, _M, _B, _C, _O
 
 
 TASK_REASONER_PROMPT = """\
@@ -60,43 +60,14 @@ TASK_REASONER_PROMPT = """\
 """
 
 
-class TaskStructureReasonState(str, Enum):
-    DONE = "done"
-    REQUEST_INFO = "request_info"
-
-
-class TaskStructureReasonOutput(BaseModel):
-
-    summary: str = Field(description=f"任务总结的详细描述", examples=["..."])
-    important_infos: Optional[Dict[str, Any]] = Field(
-        None,
-        description="任务总结中的重要信息，特别是需要后续子任务重点关注的信息。"
-        "注意：该字段仅支持结构化信息，不能使用代码、长文本等非结构化信息",
-        examples=[
-            {
-                "..._constraint": "...",
-                "..._expression": "...",
-                "..._patterns": ["...", "..."],
-                "..._execution_strategies": ["...", "..."],
-                "..._features": {"...": "...", "...": "..."},
-                "..._mapping_rules": {"...": "...", "...": "..."},
-                "...": "...",
-            }
-        ],
-    )
-    request_confirm_infos: Optional[List[RequestUserSupplyInfo]] = Field(
-        None, description="需要用户补充确认的信息，问题应尽量简单，只需要用户回答是/否或在备选项中选择即可"
-    )
-
-
 class TaskStructureReasoningAgent(BaseChatAgent):
 
     PROMPT = TASK_REASONER_PROMPT
     OUTPUT_FORMAT = AgentOutputFormat.JSON
-    OUTPUT_JSON_SCHEMA = TaskStructureReasonOutput
+    OUTPUT_JSON_SCHEMA = TaskStructureSummaryOutput
     DISPLAY_REPLY = True
 
-    def on_reply(self, reply: TaskStructureReasonOutput):
+    def on_reply(self, reply: TaskStructureSummaryOutput):
         assert reply.summary, "Reply is empty"
         _M("### 任务总结\n\n" + reply.summary)
         self.task.agent_data.issue = ""
@@ -113,5 +84,5 @@ class TaskStructureReasoningAgent(BaseChatAgent):
             )
         if reply.request_confirm_infos:
             self.task.agent_data.request_below_supply_infos = reply.request_confirm_infos
-            return TaskStructureReasonState.REQUEST_INFO
-        return TaskStructureReasonState.DONE
+            return TaskStructureSummaryState.REQUEST_INFO
+        return TaskStructureSummaryState.DONE

@@ -141,13 +141,13 @@ AGENT_OUTPUT_TEMPLEATE = no_indent(
                             {{ content['title'] }}
                         </div>
                         <div class="agent-output-block-content">
-                            {% if content['format'] == 'markdown' %}
+                            {% if content['format'] == 'markdown' +%}
                                 {{ content['content'] }}
-                            {% elif content['format'] == 'code' +%}
+                            {%+ elif content['format'] == 'code' +%}
                                 ```{{ content['code_language'] }}
                                 {{ content['content'] }}
                                 ```
-                            {% endif %}
+                            {%+ endif %}
                         </div>
                     </div>
                     {% elif content['type'] == 'markdown' +%}

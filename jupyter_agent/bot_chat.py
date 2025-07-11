@@ -50,7 +50,7 @@ class ChatMessages:
             raise NotImplementedError
         _D("Adding message: role={}, content_type={}".format(role, content_type))
         if self.display_message:
-            _B(content, title="Chat Message {}: {}".format(role, content_type))
+            _B(content, title="Chat Message [type={}, length={}, role={}]".format(content_type, len(content), role))
         if len(self.messages) == 0 or self.messages[-1]["role"] != role:
             self.messages.append({"role": role, "content": [{"type": content_type, content_key: content}]})
         else:
@@ -209,14 +209,10 @@ class BotChat:
         display_reply=True,
         max_tokens=32 * 1024,
         max_completion_tokens=4 * 1024,
-        temperature=0.8,
         n=1,
         **kwargs,
     ):
         """发送聊天请求"""
-        sizes = [len(content["text"]) for content in messages[0]["content"]]
-        total_size = sum(sizes)
-        _D("Total message size: {} chars, {}".format(total_size, sizes))
         _I("Connecting to OpenAI API: {}".format(self.base_url or "default"))
         openai_client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
         _I("Sending request to OpenAI API, model: {}".format(self.model_name))
@@ -225,7 +221,6 @@ class BotChat:
             messages=messages,
             max_tokens=max_tokens,
             max_completion_tokens=max_completion_tokens,
-            temperature=temperature,
             n=n,
             **kwargs,
         )

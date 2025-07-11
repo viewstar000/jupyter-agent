@@ -98,17 +98,30 @@ class UserSupplyInfoCellContext(CellContext):
         super().__init__(idx, cell)
         self.cell_type = CellType.USER_SUPPLY_INFO
         self.cell_source = cell["source"].strip().split("\n", 1)[1].strip() if "\n" in cell["source"].strip() else ""
+        header = cell["source"].strip().split("\n", 1)[0].strip()
+        if header.endswith("[YAML]"):
+            self.cell_format = "YAML"
+        elif header.endswith("[JSON]"):
+            self.cell_format = "JSON"
+        else:
+            self.cell_format = "YAML"
 
     def get_user_supply_infos(self) -> list[UserSupplyInfoReply]:
-        infos = yaml.safe_load(self.cell_source) if self.cell_source else []
+        if self.cell_format == "JSON":
+            infos = json.loads(self.cell_source)
+        elif self.cell_format == "YAML":
+            infos = yaml.safe_load(self.cell_source)
+        else:
+            raise ValueError(f"Unsupported format: {self.cell_format}")
         ret_infos = []
-        for info in infos:
-            ret_info = UserSupplyInfoReply(
-                question=info.get("question") or info.get("assistant"),
-                answer=info.get("answer") or info.get("user"),
-            )
-            if ret_info.question and ret_info.answer:
-                ret_infos.append(ret_info)
+        if infos:
+            for info in infos:
+                ret_info = UserSupplyInfoReply(
+                    question=info.get("question") or info.get("assistant"),
+                    answer=info.get("answer") or info.get("user"),
+                )
+                if ret_info.question and ret_info.answer:
+                    ret_infos.append(ret_info)
         return ret_infos
 
 
@@ -277,7 +290,7 @@ class AgentCellContext(CodeCellContext):
 
     @property
     def output(self):
-        return self.cell_output + "\n" + self.cell_result
+        return self.cell_output
 
     @property
     def result(self):
@@ -315,6 +328,8 @@ class AgentCellContext(CodeCellContext):
                 self.cell_idx, self.magic_name, options, self._remain_args
             )
         )
+        _D("CELL[{}] Magic Line: {}".format(self.cell_idx, repr(self.magic_line[len(self.magic_name) :].strip())))
+        _D("CELL[{}] Magic Code: {}".format(self.cell_idx, repr(self.magic_code.strip())))
         self.agent_flow = options.flow
         self.agent_stage = options.stage
         if options.planning and not self.agent_flow:
@@ -493,20 +508,21 @@ class NotebookContext:
                 with open(self.notebook_path, "r", encoding="utf-8") as f:
                     nb = nbformat.read(f, as_version=4)
                 self._cells = []
+                cur_line_compact = "".join(self.cur_line.split())
+                cur_content_compact = "".join(self.cur_content.split())
                 for idx, cell in enumerate(nb.cells):
                     _D(f"CELL[{idx}] {cell['cell_type']} {repr(cell['source'])[:80]}")
                     cell_ctx = CellContext.from_cell(idx, cell)
-                    if (
-                        isinstance(cell_ctx, AgentCellContext)
-                        and self.cur_line.strip() == cell_ctx.magic_line[len(cell_ctx.magic_name) :].strip()
-                        and self.cur_content.strip() == cell_ctx.magic_code.strip()
-                    ):
-                        if self._current_cell is None:
-                            _I(f"CELL[{idx}] Reach current cell, RETURN!")
-                            self._current_cell = cell_ctx
-                        else:
-                            _I(f"CELL[{idx}] Reach current cell, SKIP!")
-                        break
+                    if isinstance(cell_ctx, AgentCellContext):
+                        magic_line_compact = "".join(cell_ctx.magic_line[len(cell_ctx.magic_name) :].split())
+                        magic_code_compact = "".join(cell_ctx.magic_code.split())
+                        if cur_line_compact == magic_line_compact and cur_content_compact == magic_code_compact:
+                            if self._current_cell is None:
+                                _I(f"CELL[{idx}] Reach current cell, RETURN!")
+                                self._current_cell = cell_ctx
+                            else:
+                                _I(f"CELL[{idx}] Reach current cell, SKIP!")
+                            break
                     self._cells.append(cell_ctx)
                 self.notebook_state = os.stat(self.notebook_path).st_mtime
                 _I(f"Got {len(self._cells)} notebook cells")

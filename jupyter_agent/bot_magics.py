@@ -110,8 +110,8 @@ class BotMagics(Magics, Configurable):
         try:
             reset_output(stage="Logging", logging_level=self.logging_level)
             _I("Cell magic %%bot executing ...")
-            _D(f"Cell magic called with line: {line}")
-            _D(f"Cell magic called with cell: {repr(cell)[:50]} ...")
+            _D(f"Cell magic called with line: {repr(line.strip())}")
+            _D(f"Cell magic called with cell: {repr(cell.strip())}")
             if not self.ensure_notebook_path():
                 _O(
                     Markdown(

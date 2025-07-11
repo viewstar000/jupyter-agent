@@ -172,7 +172,7 @@ def test_call_success(
     flow = flow_cls(notebook_context, agent_factory, evaluator_factory)
     # Patch input to always continue
     with patch("builtins.input", return_value="c"):
-        result = flow(stage=DummyStage.START, max_tries=2, stage_continue=True, stage_confirm=False)
+        result = flow(start_stage=DummyStage.START, max_tries=2, stage_continue=True, stage_confirm=False)
     assert result == DummyStage.END
 
 
@@ -199,5 +199,5 @@ def test_call_with_failure_and_retry(
 
     flow = FailFlow(notebook_context, agent_factory, evaluator_factory)
     with patch("builtins.input", return_value="c"):
-        result = flow(stage=DummyStage.START, max_tries=1, stage_continue=True, stage_confirm=False)
+        result = flow(start_stage=DummyStage.START, max_tries=1, stage_continue=True, stage_confirm=False)
     assert result == DummyStage.START
