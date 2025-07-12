@@ -330,21 +330,27 @@ _TASK_DATA = no_indent(
         ### 当前子任务代码需求：
         {{ task.coding_prompt }}
 
-        {% if task.source %}
+        {% if task.source +%}
             ### 当前子任务生成的代码：
+
             ```python
             {{ task.source }}
             ```
-
-            {% if task.output %}
+            {%+ if task.output +%}
                 ### 当前代码执行的输出与结果：
+
+                ```output
                 {{ task.output }}
-            {% endif %}
-            {% if task.cell_error %}
+                ```
+            {%+ endif +%}
+            {%+ if task.cell_error +%}
                 ### 当前代码执行的错误信息：
+
+                ```pytb
                 {{ task.cell_error }}
-            {% endif %}
-        {% endif %}
+                ```
+            {%+ endif %}
+        {%+ endif %}
     {% endif %}
 
     {% if task.summary_prompt %}
@@ -486,9 +492,9 @@ class BaseChatAgent(BotChat, BaseAgent):
         if self.BLOCK_INCLUDES:
             return self.BLOCK_INCLUDES
         elif self.USE_SYSTEM_PROMPT:
-            return ["TASK_AGENT", "TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_TRIGGER"]
-        else:
             return ["TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_TRIGGER"]
+        else:
+            return ["TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_AGENT", "TASK_TRIGGER"]
 
     def get_prompt_blocks(self) -> OrderedDict:
 

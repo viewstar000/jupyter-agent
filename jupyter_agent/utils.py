@@ -91,6 +91,10 @@ class TeeOutputCapture(capture_output):
         return CapturedIO(stdout, stderr, outputs)
 
 
+def indent(text: str, indent: int = 4) -> str:
+    return "\n".join(f"{' ' * indent}{line}" for line in text.split("\n"))
+
+
 def no_indent(text: str) -> str:
     return re.sub(r"^\s+", "", text, flags=re.MULTILINE)
 

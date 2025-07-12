@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from IPython.core.getipython import get_ipython
 from .bot_outputs import _D, _I, _W, _E, _F, _A, ReplyType
 from .bot_actions import UserSupplyInfoReply
-from .utils import get_env_capbilities
+from .utils import get_env_capbilities, indent
 
 
 class CellType(str, Enum):
@@ -128,8 +128,8 @@ class UserSupplyInfoCellContext(CellContext):
 class CodeCellContext(CellContext):
     """任务单元格上下文类"""
 
-    max_output_size = 24 * 1024
-    max_result_size = 24 * 1024
+    max_output_size = 16 * 1024
+    max_result_size = 16 * 1024
     max_error_size = 4 * 1024
 
     @classmethod
@@ -290,7 +290,10 @@ class AgentCellContext(CodeCellContext):
 
     @property
     def output(self):
-        return self.cell_output
+        if self.cell_result and self.cell_result != "None":
+            return f"Cell Output:\n{indent(self.cell_output)}\nCell Execution Result:\n{indent(self.cell_result)}"
+        else:
+            return self.cell_output
 
     @property
     def result(self):

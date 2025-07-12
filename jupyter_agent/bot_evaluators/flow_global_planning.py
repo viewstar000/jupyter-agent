@@ -16,16 +16,8 @@ from ..bot_outputs import _D, _I, _W, _E, _F, _A, _O, _C, _M, _B
 from ..bot_evaluation import FlowEvaluationRecord
 
 
-FLOW_GLOBAL_PLANNING_EVAL_PROMPT = """\
-**角色定义**：
-
-你是一个任务规划评估专家，负责对任务规划的结果进行评估。
-
-**任务要求**：
-
-请你根据任务规划的结果，评估任务规划的质量和准确性，并给出相应的评分和反馈。
-
-{% include "TASK_OUTPUT_FORMAT" %}
+PROMPT_TPL = """
+{% include "TASK_AGENT" %}
 
 ---
 
@@ -41,8 +33,15 @@ FLOW_GLOBAL_PLANNING_EVAL_PROMPT = """\
 
 ---
 
-请按要求给出当前任务规划的评估结果：
+{% include "TASK_TRIGGER" %}
 """
+PROMPT_ROLE = """
+你是一个任务规划评估专家，负责对任务规划的结果进行评估。
+"""
+PROMPT_RULES = """
+请你根据任务规划的结果，评估任务规划的质量和准确性，并给出相应的评分和反馈。
+"""
+PROMPT_TRIGGER = "请按要求给出当前任务规划的评估结果："
 
 
 class FlowGlobalPlanningEvalResult(BaseModel):
@@ -76,10 +75,13 @@ class FlowGlobalPlanningEvaluator(BaseEvaluator):
     任务规划评估器
     """
 
-    PROMPT_TPL = FLOW_GLOBAL_PLANNING_EVAL_PROMPT
+    PROMPT_TPL = PROMPT_TPL
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
+    PROMPT_TRIGGER = PROMPT_TRIGGER
     OUTPUT_JSON_SCHEMA = EvaluationResult
 
-    def on_reply(self, reply):
+    def on_reply(self, reply: EvaluationResult):
         reply = super().on_reply(reply)
         return FlowEvaluationRecord(
             timestamp=time.time(),

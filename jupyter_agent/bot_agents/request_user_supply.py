@@ -29,63 +29,21 @@ from ..bot_actions import (
 )
 from ..utils import get_env_capbilities
 
-MOCK_USER_REPLY_PROMPT = """\
-**角色定义**：
 
+PROMPT_ROLE = """
 你是一个用户需求补充专家，负责代替用户补充回答的需求中的问题，以便于更好的完成任务。
-
-**任务要求**：
-
+"""
+PROMPT_RULES = """
 - 根据提示补充回答待确认的问题，以便于更好的完成任务。
 - 需要确保所有的问题都有明确的答案，以便于更好的完成任务。
 - 若问题可能有多种可能的答案，需要选择最合适的答案，以便于更好的完成任务。
-
-
-{% include "TASK_OUTPUT_FORMAT" %}
-
----
-
-{% include "TASK_CONTEXTS" %}
-
----
-
-{% include "CODE_CONTEXTS" %}
-
----
-
-**当前子任务信息**:
-
-### 当前子任务目标：
-{{ task.subject }}
-
-### 当前子任务代码需求：
-{{ task.coding_prompt }}
-
-### 当前代码：
-```python
-{{ task.source }}
-```
-
-### 当前代码执行的输出与结果：
-{{ task.output }}
-
-### 当前任务总结要求：
-{{ task.summary_prompt }}
-
-### 当前任务总结结果：
-{{ task.result }}
-
----
-
-需要你代替用户补充确认的问题：
+"""
+TASK_TRIGGER = """
+请按要求代替用户补充回答下述待确认的问题：
 
 {% for issue in request_supply_infos %}
 - {{ issue.question }}, (例如: {{ issue.example }})
 {% endfor %}
-
----
-
-请按要求代替用户补充回答上述待确认的问题：
 """
 
 
@@ -181,12 +139,18 @@ format_request_user_supply_info = format_request_info_json
 
 class RequestUserSupplyAgent(BaseChatAgent):
 
-    PROMPT_TPL = MOCK_USER_REPLY_PROMPT
+    PROMPT_ROLE = PROMPT_ROLE
+    PROMPT_RULES = PROMPT_RULES
     OUTPUT_FORMAT = AgentOutputFormat.JSON
     OUTPUT_JSON_SCHEMA = ReceiveUserSupplyInfoParams
     DISPLAY_REPLY = True
     MOCK_USER_SUPPLY: bool = False
     WHERE_USER_SUPPLY = "below"  # "above" or "below"
+
+    def get_prompt_blocks(self):
+        blocks = super().get_prompt_blocks()
+        blocks["TASK_TRIGGER"] = TASK_TRIGGER
+        return blocks
 
     def on_reply(self, reply: ReceiveUserSupplyInfoParams):
         assert reply, "Reply is empty"
