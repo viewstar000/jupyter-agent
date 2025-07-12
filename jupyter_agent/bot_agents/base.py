@@ -29,8 +29,8 @@ _CELL_CONTEXTS = no_indent(
 
 ```python
 {%+ for cell in cells +%}
-
 # -----------------------------------------------------------------------------
+
 {% if cell.type == "planning" and cell.source.strip() %}
     # %% [markdown] Cell[{{ cell.cell_idx }}]
     {% for line in cell.source.split('\n') %}
@@ -94,6 +94,7 @@ _CELL_CONTEXTS = no_indent(
 
 {% if task and task.subject %}
     # -----------------------------------------------------------------------------
+
     # %% Cell[{{task.cell_idx}}]
     # Task ID: {{ task.task_id }}
     # Task Subject:
@@ -497,9 +498,9 @@ class BaseChatAgent(BotChat, BaseAgent):
         if self.BLOCK_INCLUDES:
             return self.BLOCK_INCLUDES
         elif self.USE_SYSTEM_PROMPT:
-            return ["TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_TRIGGER"]
+            return ["CELL_CONTEXTS", "TASK_TRIGGER"]
         else:
-            return ["TASK_CONTEXTS", "CODE_CONTEXTS", "TASK_DATA", "TASK_AGENT", "TASK_TRIGGER"]
+            return ["CELL_CONTEXTS", "TASK_AGENT", "TASK_TRIGGER"]
 
     def get_prompt_blocks(self) -> OrderedDict:
 
