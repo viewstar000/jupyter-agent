@@ -50,7 +50,9 @@ class CodeExecutor(BaseAgent):
                 exec_failed = True
                 exc_info = ipython._format_exception_for_storage(result.error_before_exec or result.error_in_exec)
                 ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+                cell_idx_pat = re.compile(r"Cell In\[\d+\],")
                 clean_traceback = "\n".join(ansi_escape.sub("", line) for line in exc_info["traceback"])
+                clean_traceback = cell_idx_pat.sub("Cell[{}],".format(self.task.cell_idx), clean_traceback)
                 self.task.cell_error = clean_traceback
                 _E(f"执行失败: {clean_traceback}")
 

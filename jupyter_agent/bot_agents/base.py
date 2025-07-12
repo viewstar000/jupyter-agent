@@ -181,9 +181,8 @@ _TASK_CONTEXTS = no_indent(
     """
 **全局任务规划及子任务完成情况**：
 
-{%+ for cell in cells %}
-    {% if cell.type == "planning" and cell.source.strip() +%}
-
+{% for cell in cells %}
+    {% if cell.type == "planning" and cell.source.strip() %}
         {{ cell.source }}
         {{ cell.result }}
     {% elif cell.type == "task" and cell.subject.strip() %}
@@ -245,22 +244,28 @@ _TASK_CONTEXTS = no_indent(
 
 _CODE_CONTEXTS = no_indent(
     """
-**已执行的代码**：
+**当前Jupyter Notebook中已生成并执行的代码**：
+
+注：`# %% Cell[n]` 代表Jupyter Notebook中的第 `n` 个单元格
 
 ```python
-{% for cell in cells +%}
+{% for cell in cells %}
     {% if cell.type == "task" and cell.source.strip() %}
-        ######## Cell[{{ cell.cell_idx }}] for Task[{{ cell.task_id }}] ########
+        # -------------------------------------------------------------------------
+        # %% Cell[{{ cell.cell_idx }}] for Task[{{ cell.task_id }}]
 
         {{ cell.source }}
+        
     {% elif cell.is_code_context and cell.source.strip() %}
-        ######## Cell[{{ cell.cell_idx }}] ########
+        # -------------------------------------------------------------------------
+        # %% Cell[{{ cell.cell_idx }}]
 
         {{ cell.source }}
-    {% endif %}
-{%+ endfor %}
-```
 
+    {% endif %}
+{% endfor %}
+# -------------------------------------------------------------------------
+```
 """
 )
 

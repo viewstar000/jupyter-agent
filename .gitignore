@@ -197,4 +197,5 @@ cython_debug/
 tmp
 .DS_Store
 .vscode
-jupyter-agent.code-workspace
+.continue
+*.code-workspace

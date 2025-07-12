@@ -96,7 +96,7 @@ def indent(text: str, indent: int = 4) -> str:
 
 
 def no_indent(text: str) -> str:
-    return re.sub(r"^\s+", "", text, flags=re.MULTILINE)
+    return "\n".join(line.lstrip() for line in text.split("\n"))
 
 
 def no_wrap(text: str) -> str:
